@@ -217,6 +217,24 @@ void fm1_display_snapshot(unsigned phase, const uint32_t registers[FM1_LCD_REGIS
 static uint32_t now_us(void *ctx) { (void)ctx; return timer_get_ms() * 1000u; }
 
 __attribute__((noinline, used))
+/* MASTER-Poti starten: im Emulator eine Fassung von fm1_volume_start (fm1-nes, Apache-2.0) ohne die zwei
+   Zugriffe, die der Emulator nicht nachbildet (PB-Register +0x20 und ANA PLL_CON1 0x119A4). Auf dem Geraet
+   unveraendert fm1_volume_start. Abfrage danach in beiden Faellen mit fm1_volume_tick. */
+#define GD_RD(a) (*(volatile uint32_t *)(uintptr_t)(a))
+#define GD_CHG(a, clr, set) (GD_RD(a) = (GD_RD(a) & ~(uint32_t)(clr)) | (uint32_t)(set))
+static void gd_volume_start(fm1_volume *s)
+{
+    if (!GD_EMU) { fm1_volume_start(s); return; }
+    memset(s, 0, sizeof(*s));
+    if (GD_RD(0x13100u) & 0x30u) { s->errors = 1; return; }
+    GD_CHG(0x50048u, 0, 0x40); GD_CHG(0x5004Cu, 0x40, 0);   /* PB6: Eingang, digital aus */
+    GD_CHG(0x50050u, 0x40, 0); GD_CHG(0x50054u, 0x40, 0);   /* keine Pull-ups/-downs */
+    GD_CHG(0x11900u, 0x3c0feu, 0x20005u);
+    GD_RD(0x13100u) = 0;
+    s->running = 1;
+    GD_RD(0x13100u) = 0xf44eu; GD_CHG(0x13100u, 0, 0x10); GD_CHG(0x13100u, 0, 0x40);
+}
+
 static void gd_ui_task(void *arg)
 {
     uint8_t rows[FM1_STOCK_SCAN_ROWS];
@@ -226,7 +244,7 @@ static void gd_ui_task(void *arg)
     (void)arg;
     fm1_display_test_init();
     scan_ok = fm1_wl82_keyscan_start(&scanner, 0, now_us) == 0;
-    fm1_volume_start(&volume);
+    gd_volume_start(&volume);
     for (;;) {
         const uint32_t now = timer_get_ms();
         if (scan_ok && fm1_wl82_keyscan_raw(&scanner, rows) == 0) gd_input_scan(&input, rows, &app);
