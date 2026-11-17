@@ -159,6 +159,11 @@ def emulator_patch(img, symbols=None, disasm=None):
         if disasm:
             n = fcmp_trampolines(d, disasm, funcs, addr.get("gd_emu_tramp"))
             print("Emulator-Fassung: %d Gleitkomma-Vergleich(e) mit weitem Sprung umgeleitet" % n)
+            # Speicher-XOR mit Konstante (EF40..EF5F, z. B. aus "x ^= 1") kennt der Emulator nicht: nur melden
+            xs = re.findall(r"^\s*([0-9a-f]+):\s+[4-5][0-9a-f] ef [0-9a-f]{2} [0-9a-f]{2}\s+\[.*\^=", disasm, re.M)
+            if xs:
+                print("Warnung: %d Speicher-XOR-Befehl(e), im Emulator ein Abbruch, falls erreicht: %s"
+                      % (len(xs), " ".join("0x" + x for x in xs[:12])))
         else:
             print("Hinweis: kein objdump - Gleitkomma-Vergleiche mit weitem Sprung bleiben (Emulator bricht dort ab)")
     return bytes(d)

@@ -514,7 +514,8 @@ static void good_process(gd_good *g, float *l, float *r)
     for (i = 0; i < 12; ++i) { const float b = svf_process(&g->bp[i], m, 2); g->e[i] += g->eC * (b * b - g->e[i]); }
     if (0) {
 #else
-    if ((g->half ^= 1u) != 0u) g->prevM = m;
+    g->half = g->half ? 0u : 1u;   /* kein ^=: Speicher-XOR kennt der Emulator nicht */
+    if (g->half != 0u) g->prevM = m;
     else {
 #endif
         const float x = 0.5f * (m + g->prevM);

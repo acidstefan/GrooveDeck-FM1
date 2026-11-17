@@ -221,7 +221,7 @@ static void button_event(gd_app *a, int b, int down)
         const int pg = pageOf[b];
         if (!down) return;
         if (pg == PG_ARP && !gd_is_kbd(a->part)) { message(a, "ARP nur fuer BS/LD"); return; }
-        if (a->page == pg) a->sub ^= 1;      /* erneut druecken: Seite B */
+        if (a->page == pg) a->sub = a->sub ? 0 : 1;   /* erneut druecken: Seite B (kein ^=: EF40 kennt der Emulator nicht) */
         else { a->page = pg; a->sub = 0; }
         return;
     }
