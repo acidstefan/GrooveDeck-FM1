@@ -25,7 +25,7 @@ export FM1_TOOLCHAIN_DIR=$(ls -d ~/.jieli/jieli-linux-toolchains-*/pi32v2/bin | 
 python3 target/build.py --out build
 ```
 
-Ergebnis: `build/groovedeck.app.bin`.
+Ergebnis: `build/groovedeck.app.bin` (für das Gerät) und `build/groovedeck-emu.bin` (für den Emulator, siehe Abschnitt 3).
 
 Optionen:
 - `--y-offset 40`: verwenden, falls das Bild im Emulator verschoben oder abgeschnitten ist.
@@ -34,10 +34,12 @@ Optionen:
 ## 3. Im Emulator starten
 
 ```bash
-./emulator build/groovedeck.app.bin
+./emulator build/groovedeck-emu.bin
 ```
 
-Tastatur im Emulator: Z/C spielen Noten, X/V Oktave, P/O ENV/LFO, H HOME; die übrigen Bedienelemente mit der Maus (Klick auf Buttons, Ziehen/Scrollen an den Drehgebern). Zum Prüfen ohne Fenster: `./emulator --headless build/groovedeck.app.bin`.
+Die Emulator-Fassung unterscheidet sich nur darin, dass Parallelbefehle mit `clz` (vom Compiler im Betriebssystem-Kern erzeugt) nacheinander ausgeführt werden. Diese Form kennt der Emulator noch nicht.
+
+Tastatur im Emulator: Z/C spielen Noten, X/V Oktave, P/O ENV/LFO, H HOME; die übrigen Bedienelemente mit der Maus (Klick auf Buttons, Ziehen/Scrollen an den Drehgebern). Zum Prüfen ohne Fenster: `./emulator --headless build/groovedeck-emu.bin`.
 
 Wichtig dabei: Der Emulator misst die Zeit in Befehlen (8 ns je Befehl). Läuft der Ton stotternd oder langsamer als Echtzeit, reicht die Rechenzeit nicht. Dann bitte mit `--lean` bauen und mir Bescheid geben.
 
