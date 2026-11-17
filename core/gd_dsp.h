@@ -110,6 +110,7 @@ typedef struct {
     gd_good good;
     float mGain, mxl, myl, mxr, myr;
     float meterL, meterR;
+    int quiet;         /* Samples ohne Eingang und mit stummem Ausgang (Master wird dann uebersprungen) */
     uint32_t activity; /* Bit je Part: Note seit letztem Abholen */
 } gd_engine;
 

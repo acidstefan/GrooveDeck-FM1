@@ -37,6 +37,12 @@
 #define GD_GOOD_FULLRATE 1
 #endif
 
+/* Stille-Erkennung am Master: so viele Samples ohne Eingang und mit stummem Ausgang, dann werden FX/Soundgoodizer
+   uebersprungen. Muss laenger sein als die laengste Delay-Zeile (ein Echo kann so spaet noch kommen). */
+#ifndef GD_QUIET_SKIP
+#define GD_QUIET_SKIP (GD_DELAY_LEN + 4096)
+#endif
+
 /* Laengster Pattern (Steps) */
 #define GD_MAX_STEPS 64
 

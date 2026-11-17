@@ -1069,7 +1069,16 @@ void gd_engine_render_master(gd_engine *e, const gd_bus *bus, float *l, float *r
     const int chain = gd_clampi(gd_roundi(e->g[GP_FXCHAIN]), 0, 3);
     const tube_k mtk = tube_coef(master);
     float pkL = 0.0f, pkR = 0.0f;
-    int i, k;
+    int i, k, inZero = 1;
+    for (k = 0; k < 4 && inZero; ++k)
+        for (i = 0; i < bus->c; ++i)
+            if (bus->b[k][0][i] != 0.0f || bus->b[k][1][i] != 0.0f) { inZero = 0; break; }
+    /* Stille: kein Eingang und der Ausgang war laenger als die laengste Delay-Zeile stumm -> FX, Soundgoodizer
+       und Tube ueberspringen (Ergebnis waere < -100 dB). Spart im Leerlauf fast die ganze Rechenzeit. */
+    if (inZero && e->quiet >= GD_QUIET_SKIP) {
+        for (i = 0; i < bus->c; ++i) e->mGain += 0.002f * (mgTarget - e->mGain);
+        return;
+    }
     for (i = 0; i < bus->c; ++i) {
         float mixL = bus->b[0][0][i], mixR = bus->b[0][1][i], oL, oR;
         float fxL[3], fxR[3];
@@ -1096,6 +1105,8 @@ void gd_engine_render_master(gd_engine *e, const gd_bus *bus, float *l, float *r
     }
     if (pkL > e->meterL) e->meterL = pkL;
     if (pkR > e->meterR) e->meterR = pkR;
+    if (inZero && pkL < 1e-5f && pkR < 1e-5f) { if (e->quiet < GD_QUIET_SKIP) e->quiet += bus->c; }
+    else e->quiet = 0;
 }
 
 void gd_engine_render(gd_engine *e, float *l, float *r, int n)
