@@ -43,6 +43,16 @@ Tastatur im Emulator: Z/C spielen Noten, X/V Oktave, P/O ENV/LFO, H HOME; die ü
 
 Wichtig dabei: Der Emulator misst die Zeit in Befehlen (8 ns je Befehl). Läuft der Ton stotternd oder langsamer als Echtzeit, reicht die Rechenzeit nicht. Dann bitte mit `--lean` bauen und mir Bescheid geben.
 
+### Befehlsformen prüfen, die der Emulator nicht kennt
+
+Die aktuelle JieLi-Toolchain erzeugt vereinzelt Befehlsformen, die der Emulator noch nicht nachbildet. Ein Absturz meldet dann `unsupported instruction`. Alle Stellen auf einmal findet:
+```bash
+git clone https://github.com/simonjohansson/fm1-emulator ~/fm1-emulator-src
+~/.jieli/jieli-linux-toolchains-*/common/bin/objdump -d build/groovedeck.elf > build/disasm.txt
+python3 tools/emu_sweep_local.py ~/fm1-emulator-src build/disasm.txt build/groovedeck-emu.bin build/luecken.md
+```
+Stand 17.11.2026: nur noch `EEDE` (Byte mit Register-Schrittweite) im SDK-Dateisystemcode, der nicht aufgerufen wird.
+
 ## 4. Auf das echte Gerät? Noch nicht.
 
 Diese Firmware enthält **keinen USB-Updater**. Nach dem Aufspielen ließe sich das Gerät nur noch über den Masken-ROM-Downloadmodus zurückflashen, also mit einem RP2040-Adapter und dem FM-1-Transporter oder MvaveFM1Unbricker. Außerdem ist die Speicherfunktion (SAVE) noch nicht an den Flash angebunden. Bevor wir aufs Gerät gehen, kommen:

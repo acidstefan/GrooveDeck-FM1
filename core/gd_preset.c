@@ -31,43 +31,61 @@ static void set_field(gd_engine *e, int part, int f, float v)
     }
 }
 
-static int decode(gd_seq *s, const uint8_t *d, const uint8_t *end, int chanPart)
+/* Byte lesen ueber eine nicht eingebettete Funktion: verhindert, dass der Compiler das Weiterschalten des
+   Lesezeigers mit dem Laden verschmilzt (Byte-Laden mit Register-Schrittweite, Befehl EEDE). Diese Form
+   kennt der fm1-emulator nicht; der Decoder ist nicht zeitkritisch. */
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((noinline))
+#endif
+static unsigned rd8(const uint8_t *base, unsigned pos) { return base[pos]; }
+
+static int decode(gd_seq *s, const uint8_t *data, const uint8_t *end, int chanPart)
 {
     gd_engine *e = s->eng;
+    const unsigned len = (unsigned)(end - data);
+    unsigned pos = 0;
     int i;
-    while (d < end && *d) {
-        switch (*d) {
-            case 1: e->g[GP_TEMPO] = (float)(d[1] | (d[2] << 8)) / 10.0f; d += 3; break;
-            case 2: s->pat.patLen = gd_clampi(d[1], 1, GD_MAX_STEPS); d += 2; break;
+    while (pos < len && rd8(data, pos)) {
+        const unsigned t = rd8(data, pos);
+        const unsigned a = pos + 1 < len ? rd8(data, pos + 1) : 0;
+        const unsigned b = pos + 2 < len ? rd8(data, pos + 2) : 0;
+        switch (t) {
+            case 1: e->g[GP_TEMPO] = (float)(a | (b << 8)) / 10.0f; pos += 3; break;
+            case 2: s->pat.patLen = gd_clampi((int)a, 1, GD_MAX_STEPS); pos += 2; break;
             case 3: {
-                const int part = d[1], nb = d[2];
                 uint64_t m = 0;
-                for (i = 0; i < nb && i < 8; ++i) m |= (uint64_t)d[3 + i] << (8 * i);
-                if (part < GD_PARTS) s->pat.stepMask[part] = m;
-                d += 3 + nb;
+                if (pos + 3 + b > len) return -1;
+                for (i = 0; i < (int)b && i < 8; ++i) m |= (uint64_t)rd8(data, pos + 3 + (unsigned)i) << (8 * i);
+                if (a < GD_PARTS) s->pat.stepMask[a] = m;
+                pos += 3 + b;
                 break;
             }
             case 4:
             case 5: {
-                const int kp = d[1] & 1, n = d[2];
-                for (i = 0; i < n && i < GD_MAX_STEPS; ++i) {
-                    if (*d == 4) s->pat.kbdNote[kp][i] = d[3 + i];
-                    else s->pat.kbdLen[kp][i] = d[3 + i];
+                const int kp = (int)(a & 1u);
+                if (pos + 3 + b > len) return -1;
+                for (i = 0; i < (int)b && i < GD_MAX_STEPS; ++i) {
+                    const uint8_t v = (uint8_t)rd8(data, pos + 3 + (unsigned)i);
+                    if (t == 4) s->pat.kbdNote[kp][i] = v;
+                    else s->pat.kbdLen[kp][i] = v;
                 }
-                d += 3 + n;
+                pos += 3 + b;
                 break;
             }
             case 6: {
-                const int id = d[1] | (d[2] << 8);
-                const float v = dec_val((unsigned)(d[3] | (d[4] << 8)));
+                const int id = (int)(a | (b << 8));
+                float v;
+                if (pos + 5 > len) return -1;
+                v = dec_val(rd8(data, pos + 3) | (rd8(data, pos + 4) << 8));
                 if (id < GP_COUNT) { if (id != GP_MASTERVOL) e->g[id] = v; }
                 else if (id >= 64) set_field(e, (id - 64) / PF_COUNT, (id - 64) % PF_COUNT, v);
-                d += 5;
+                pos += 5;
                 break;
             }
             case 7:
-                set_field(e, chanPart, d[1], dec_val((unsigned)(d[2] | (d[3] << 8))));
-                d += 4;
+                if (pos + 4 > len) return -1;
+                set_field(e, chanPart, (int)a, dec_val(b | (rd8(data, pos + 3) << 8)));
+                pos += 4;
                 break;
             default: return -1; /* defekte Daten */
         }
