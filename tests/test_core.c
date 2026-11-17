@@ -146,6 +146,62 @@ static void test_presets_load(void)
     for (i = 0; i < 16; ++i) if (i != GD_ACCENT && i <= 8) CHECK(gd_chan_preset_count(i) > 0 || i == 8, "Kanal-Presets fehlen");
 }
 
+static void run_audio(gd_app *x, int blocks)
+{
+    float l[64], r[64];
+    int i;
+    for (i = 0; i < blocks; ++i) gd_app_audio(x, l, r, 64);
+}
+
+static void test_midi_leds(void)
+{
+    gd_midi m;
+    uint8_t keys[GD_KEYS], btn[GB_COUNT], green;
+    int i, k;
+    memset(&m, 0, sizeof m);
+    gd_app_init(&app, 44100.0f);
+    run_audio(&app, 2);
+    /* Kanal 10, Note 36 = Bass Drum; Running Status fuer die zweite Note */
+    gd_midi_byte(&m, &app, 0x99); gd_midi_byte(&m, &app, 36); gd_midi_byte(&m, &app, 100);
+    gd_midi_byte(&m, &app, 42); gd_midi_byte(&m, &app, 90);
+    gd_app_audio(&app, (float[64]){0}, (float[64]){0}, 64);
+    CHECK(app.flashMs[0] > 0 && app.flashMs[5] > 0, "MIDI: BD und Hat ueber Kanal 10 nicht ausgeloest");
+    /* SysEx dazwischen darf nichts ausloesen */
+    gd_midi_byte(&m, &app, 0xF0); gd_midi_byte(&m, &app, 0x43); gd_midi_byte(&m, &app, 0x10); gd_midi_byte(&m, &app, 0xF7);
+    /* Clock 100 BPM: 24 Takte je 600 ms -> alle 25 ms */
+    gd_midi_byte(&m, &app, 0xFA);
+    for (i = 0; i < 24 * 8; ++i) {
+        gd_midi_byte(&m, &app, 0xF8);
+        run_audio(&app, 17);   /* 17 x 64 Samples = 24,7 ms */
+    }
+    CHECK(app.seq.playing && app.extClock, "MIDI: Start/Clock nicht erkannt");
+    CHECK(fabsf(app.eng.g[GP_TEMPO] - 101.2f) < 3.0f, "MIDI: Tempo aus der Clock falsch");
+    printf("  MIDI-Clock: Tempo %.1f (Soll ca. 101)\n", (double)app.eng.g[GP_TEMPO]);
+    gd_midi_byte(&m, &app, 0xFC);
+    run_audio(&app, 1);
+    CHECK(!app.seq.playing, "MIDI: Stop nicht erkannt");
+    /* LEDs im STEP-Modus = Steps des gewaehlten Kanals */
+    gd_leds_compute(&app, 0, keys, btn, &green);
+    for (k = 0; k < 16; ++k) {
+        const int on = (int)((app.seq.pat.stepMask[app.part] >> k) & 1u);
+        CHECK((keys[k] == 255) == on, "LED: Step-Anzeige stimmt nicht");
+    }
+    CHECK(btn[GB_SEQ] == 255 && btn[GB_PLAY] == 255 && green == 0 && btn[GB_HOME] == 255, "LED: Buttons im Stopp-Zustand");
+    /* SAVE halten speichert erst nach 0,8 s */
+    gd_app_post_button(&app, GB_SAVE, 1);
+    run_audio(&app, 200);              /* 0,29 s */
+    CHECK(!app.userValid, "SAVE: zu frueh gesichert");
+    run_audio(&app, 500);              /* + 0,73 s */
+    CHECK(app.userValid, "SAVE halten: nicht gesichert");
+    gd_app_post_button(&app, GB_SAVE, 0);
+    /* OCT halten + ALGORITHM = Transpose, Oktave bleibt */
+    gd_app_post_button(&app, GB_OCTUP, 1);
+    gd_app_post_encoder(&app, GE_ALGO, 3);
+    gd_app_post_button(&app, GB_OCTUP, 0);
+    run_audio(&app, 1);
+    CHECK(app.transpose == 3 && app.octave == 0 && app.stepPage == 0, "Transpose-Kombination");
+}
+
 int main(void)
 {
     test_math();
@@ -153,6 +209,7 @@ int main(void)
     test_save_load();
     test_seq_arp();
     test_presets_load();
+    test_midi_leds();
     if (fails) { printf("%d Test(s) fehlgeschlagen\n", fails); return 1; }
     printf("Alle Tests bestanden\n");
     return 0;

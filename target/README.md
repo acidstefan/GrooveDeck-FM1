@@ -48,7 +48,20 @@ Diese Firmware enthält **keinen USB-Updater**. Nach dem Aufspielen ließe sich 
 2. SAVE dauerhaft im Flash
 3. Prüfung des Flash-Chips (neuere Geräte haben einen UC25HQ80)
 
-## 5. Bekannte offene Punkte
+## 5. Hardware, für die noch Treiber fehlen
+
+Das Verhalten ist in `core/` fertig. Auf dem FM-1 fehlt jeweils nur die Anbindung:
+
+| Element | Was fehlt | Ansatz |
+|---|---|---|
+| LEDs (27 Tasten, Buttons, PLAY grün) | Ansteuerung | Die LEDs hängen an der Tastenmatrix: Eine LED leuchtet, solange ihre Spalte der 74HC595-Kette aktiv (low) ist und ihre LED-Leitung high (PA9, PA10, PH6, PH9 für Zeilen 1–4). PLAY grün: Spalte 8, Zeile 1 (Emulator-Zählung). Helligkeit über die Einschaltdauer je Spalte. Der fm1-nes-Scanner hält diese Leitungen low und muss dafür erweitert werden. Werte liefert `gd_leds_compute`. |
+| MIDI-Eingang TRS | UART-Pin, Baudrate 31250 | Pin noch nicht dokumentiert; Bytes an `gd_midi_byte` geben |
+| USB-MIDI | USB-Gerätestack | ohne GPL-Teile von fm1-nes; Bytes an einen zweiten `gd_midi`-Parser |
+| Bluetooth-MIDI | BLE-Stack | spätere Stufe |
+| Akku | Spannungsmessung | ADC-Kanal noch nicht dokumentiert; Wert an `gd_app_set_battery` |
+| Lautsprecher / Kopfhörer | – | schaltet die Hardware selbst um |
+
+## 6. Bekannte offene Punkte
 
 | Punkt | Stand |
 |---|---|

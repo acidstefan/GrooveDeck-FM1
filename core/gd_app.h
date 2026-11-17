@@ -22,7 +22,7 @@ enum { PG_HOME = 0, PG_ENV, PG_LFO, PG_EDIT, PG_FX, PG_GLO, PG_ARP, PG_SEL, PG_C
 
 /* Ereignis aus dem Bedien-Task an den Audio-Task (Einweg-Ringpuffer, ein Schreiber, ein Leser) */
 typedef struct { uint8_t type, a; int16_t b; } gd_evt;
-enum { EV_KEY = 1, EV_BTN, EV_ENC, EV_MASTER };
+enum { EV_KEY = 1, EV_BTN, EV_ENC, EV_MASTER, EV_MIDI };
 #define GD_EVQ 64
 
 typedef struct {
@@ -42,6 +42,16 @@ typedef struct {
     uint8_t user[4096];
     int userLen, userValid;
     int (*save_hook)(const uint8_t *data, int len); /* optional: Plattform speichert dauerhaft, 0 = ok */
+    /* Zeit im Audio-Task (ms), Halte-Funktionen, Aenderungsmerker */
+    uint32_t audioMs, btnDownMs[GB_COUNT];
+    int holdDone[GB_COUNT], comboUsed[GB_COUNT];
+    int dirty, transpose;
+    int flashMs[GD_PARTS];        /* Aufblitzen der Tasten-LEDs beim Ausloesen eines Drums */
+    /* MIDI-Eingang (TRS-Buchse, USB): externe Clock */
+    int extClock, clockCount;
+    uint32_t clockT0Ms, lastClockMs;
+    /* Akku (von der Plattform gemeldet): -1 = unbekannt */
+    int battery, charging;
 } gd_app;
 
 void gd_app_init(gd_app *a, float sampleRate);
@@ -50,6 +60,15 @@ void gd_app_post_key(gd_app *a, int key, int down);
 void gd_app_post_button(gd_app *a, int btn, int down);
 void gd_app_post_encoder(gd_app *a, int enc, int delta);
 void gd_app_post_master(gd_app *a, float v01);
+/* MIDI-Bytes einspeisen (UART der TRS-Buchse, USB-MIDI). Mehrere Quellen brauchen je einen eigenen Parser. */
+typedef struct { uint8_t status, d0, n, sysex; } gd_midi;
+void gd_midi_byte(gd_midi *m, gd_app *a, uint8_t byte);
+/* Akkustand 0..100 (-1 = unbekannt), laedt = 1 waehrend USB-Strom anliegt */
+void gd_app_set_battery(gd_app *a, int percent, int charging);
+/* LED-Helligkeiten 0..255 fuer den aktuellen Zustand (Bedien-Task, ca. alle 10 ms).
+   keys[27] = Tasten-LEDs, btn[GB_COUNT] = Button-LEDs (bei PLAY: weisse STOP-LED), playGreen = gruene PLAY-LED */
+void gd_leds_compute(const gd_app *a, uint32_t nowMs, uint8_t keys[GD_KEYS], uint8_t btn[GB_COUNT], uint8_t *playGreen);
+
 /* Audio-Task: Ereignisse anwenden, dann n Samples rechnen (l/r werden ueberschrieben) */
 void gd_app_audio(gd_app *a, float *l, float *r, int n);
 /* zwei Haelften fuer zwei Kerne: Kern 0 gd_app_audio_voices, Kern 1 gd_engine_render_master */

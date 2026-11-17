@@ -11,7 +11,7 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 
 set(GD_CORE
     core/gd_dsp.c core/gd_arp.c core/gd_seq.c core/gd_preset.c core/gd_presets_data.c
-    core/gd_app.c core/gd_ui.c core/gd_ui_params.c core/gd_font.c core/gd_input.c)
+    core/gd_app.c core/gd_ui.c core/gd_ui_params.c core/gd_font.c core/gd_input.c core/gd_leds.c)
 
 add_library(gdcore STATIC ${GD_CORE})
 target_include_directories(gdcore PUBLIC core)

@@ -9,7 +9,7 @@ Eigener Code, ohne GPL-Abhängigkeit. Die Hardware-Treiber kommen aus [fm1-nes](
 | Teil | Ordner | Stand |
 |---|---|---|
 | Klangerzeugung, Sequencer, Arp, Presets | `core/` | fertig, am PC geprüft |
-| Bedienoberfläche (240×240), Tasten/Drehgeber-Auswertung | `core/` | fertig, in der PC-Simulation geprüft |
+| Bedienoberfläche (240×240), Tasten/Drehgeber, LED-Logik, MIDI-Eingang, Akku-Anzeige | `core/` | fertig, in der PC-Simulation und mit Tests geprüft |
 | PC-Werkzeuge und Tests | `host/`, `tests/` | fertig |
 | Hardware-Anbindung FM-1, Build-Skript | `target/` | **Entwurf, noch nicht kompiliert** – siehe `target/README.md` |
 
@@ -32,28 +32,77 @@ ctest --test-dir build -C Release
 - `gd_render 0 8 preset.wav`: Preset 1 als 8-Sekunden-WAV rendern (zum Anhören)
 - `gd_render --list`: alle Presets anzeigen
 - `gd_render --all`: alle Presets prüfen (Pegel, NaN, Rechenzeit)
-- `gd_sim ausgabe`: Bedienung simulieren, Bildschirmfotos (PPM) und Ton (WAV) schreiben
+- `gd_sim ausgabe`: Bedienung simulieren, Bildschirmfotos und Bedienfeld mit LEDs (PPM) sowie Ton (WAV) schreiben
 - Klangvergleich mit dem Plugin: `cmake -B build -DGROOVEDECK_SOURCE=<Pfad>/GrooveDeck/Source`, danach `compare_ref 0 439 0`
 
-## Bedienung auf dem FM-1
+## Bedienelemente und Anschlüsse des FM-1
 
-| Bedienelement | Funktion |
+Status: **umgesetzt** = Verhalten in `core/` programmiert und am PC getestet. **Treiber offen** = die FM-1-Anbindung in `target/` fehlt noch (siehe `target/README.md`). **Hardware** = funktioniert ohne Firmware.
+
+### Übersicht
+
+| Element | Anzahl / Art | GrooveDeck-Funktion | Status |
+|---|---|---|---|
+| Display | 1,54" TFT, 240 × 240 | Preset, Kanäle, Step-Raster, Reglerseite, Meldungen, Tempo, Akku | umgesetzt, Treiber im Entwurf |
+| Drehgeber | 7 endlos (SELECT, PRESETS, ALGORITHM, KNOB 1–4) | siehe unten | umgesetzt, Treiber im Entwurf |
+| MASTER | Poti, 300° | Master-Lautstärke | umgesetzt, Treiber im Entwurf |
+| Buttons | 14, mit LED | siehe unten | Tasten umgesetzt; LEDs: Logik umgesetzt, Treiber offen |
+| PLAY-Button | zusätzlich grüne LED | grün = läuft (blinkt bei externer Clock), weiß = STOP | Logik umgesetzt, Treiber offen |
+| Tastatur | 27 Silikontasten, je eine LED | Steps setzen oder spielen; LEDs zeigen Steps/Noten | Tasten umgesetzt; LEDs: Logik umgesetzt, Treiber offen |
+| Lautsprecher | eingebaut | Wiedergabe; schaltet beim Einstecken eines Kopfhörers ab | Hardware |
+| Audio-Ausgang | 3,5 mm TRS (Kopfhörer/Line) | Stereo-Ausgang der Engine | Treiber im Entwurf (IIS) |
+| MIDI-Eingang | 3,5 mm TRS (Adapter auf DIN) | Noten, Controller, MIDI-Clock/Start/Stop | Logik umgesetzt, Treiber offen |
+| USB-C | Strom/Laden, USB-MIDI | Laden; USB-MIDI wie TRS-Eingang; später Firmware-Update | Laden: Hardware; MIDI/Update offen |
+| Bluetooth-MIDI | BLE | noch nicht unterstützt (HOME lang: Hinweis) | offen |
+| Ein/Aus-Schalter | Rückseite | Gerät ein/aus | Hardware |
+| Akku | 3,7 V, 2000 mAh | Anzeige im Display, Warnung unter 5 % | Anzeige umgesetzt, Messung offen |
+
+### Drehgeber und MASTER
+
+| Element | Funktion |
 |---|---|
-| PRESETS (Drehgeber) | Werkspreset wählen (lädt sofort, Wiedergabe läuft weiter) |
-| SELECT (Drehgeber) | Kanal wählen: BD SD TM PC CP CH OH CY C2, AC (Akzent), BS (Bass), LD (Lead) |
-| ALGORITHM (Drehgeber) | Tempo |
-| KNOB 1–4 | Regler der aktuellen Seite |
-| HOME / ENV / LFO / EDIT / FX / GLO / ARP / SEL | Reglerseite wählen; nochmal drücken = Seite B |
-| SEQ | Tastatur umschalten: STEP (Tasten 1–16 setzen Steps) oder PLAY (Tasten spielen) |
-| PLAY/STOP | Start/Stopp |
-| REC | Live-Aufnahme: gespielte Noten landen auf dem nächsten Step |
-| OCT−/OCT+ | STEP: Step-Seite (17–32 …), PLAY: Oktave; beide zusammen: zurücksetzen |
-| SAVE | Stand sichern (noch nur im RAM); SEL + SAVE: gesicherten Stand laden |
-| MASTER (Poti) | Master-Lautstärke |
+| PRESETS | Werkspreset wählen (lädt sofort, die Wiedergabe läuft weiter) |
+| SELECT | Kanal wählen: BD SD TM PC CP CH OH CY C2, AC (Akzent), BS (Bass), LD (Lead) |
+| ALGORITHM | Tempo; mit gehaltenem OCT− oder OCT+: Transpose −12 … +12 |
+| KNOB 1–4 | Regler der aktuellen Seite (Beschriftung unten im Display) |
+| MASTER | Master-Lautstärke |
 
-Im PLAY-Modus mit gewähltem Drum-Kanal spielen die untersten neun Tasten die neun Drums (Fingerdrumming). Bei Bass/Lead spielen die Tasten chromatisch, über Arpeggiator/Chord, wenn die eingeschaltet sind. Eine Step-Taste setzt bei Bass/Lead die zuletzt gespielte Note.
+### Buttons
 
-Reglerseiten (A / B):
+| Button | Drücken | Halten / Kombination | LED |
+|---|---|---|---|
+| HOME, ENV, LFO, EDIT, FX, GLO, ARP, SEL | Reglerseite wählen; erneut drücken = Seite B | HOME lang: Bluetooth (noch nicht unterstützt) | Seite A: an, Seite B: pulsiert; ARP glimmt, wenn ein Arpeggiator läuft |
+| SEQ | Tastatur: STEP (Tasten 1–16 = Steps) ↔ PLAY (Tasten spielen) | – | an im STEP-Modus |
+| PLAY/STOP | Start/Stopp | – | grün beim Spielen (blinkt bei externer Clock), weiß im Stopp |
+| REC | Live-Aufnahme an/aus | – | rot; blinkt, solange angehalten |
+| SAVE | – | halten (0,8 s): sichern; SEL + SAVE: Gesichertes laden | glimmt bei ungesicherten Änderungen, hell beim Halten |
+| OCT−, OCT+ | STEP: Step-Seite (beim Loslassen); PLAY: Oktave ±3 | beide zusammen: Oktave, Transpose und Step-Seite auf 0; halten + ALGORITHM: Transpose | STEP: zeigt weitere Seiten links/rechts; PLAY: Oktave wie Werks-Firmware (±1 langsam, ±2 schnell blinkend, ±3 an) |
+
+### Tastatur und Tasten-LEDs
+
+| Modus | Tasten | LEDs |
+|---|---|---|
+| STEP, Drums | 1–16: Step an/aus auf der aktuellen Seite | Steps an; laufender Step blinkt; Zählzeiten schwach. 17–20: Step-Seiten (aktuelle hell) |
+| STEP, Bass/Lead | 1–16: Step an/aus (mit zuletzt gespielter Note); 17–27: Note wählen | wie oben, gedrückte Tasten hell |
+| PLAY, Drums | 1–9: die neun Drums (Fingerdrumming) | Taste blitzt beim Auslösen des Drums auf, auch vom Sequencer |
+| PLAY, Bass/Lead | chromatisch ab F3 (Oktave/Transpose), über Arp/Chord, falls an | alle klingenden Töne, auch vom Arpeggiator und Sequencer |
+
+REC während der Wiedergabe: Gespielte Noten (Tastatur oder MIDI) landen auf dem nächsten Step.
+
+### MIDI-Eingang (TRS und USB)
+
+| Nachricht | Wirkung |
+|---|---|
+| Note an/aus, Kanal 10 | Drums nach GM-Belegung: 36 BD, 38 SD, Toms, 37/56 Perc, 39 Clap, 42 Hat zu, 46 Hat offen, 49 Crash, 51 Ride |
+| Note an/aus, Kanal 1 / 2 | Bass / Lead (über Arp/Chord, falls an) |
+| Note an/aus, andere Kanäle | gewählter Kanal |
+| CC 74 / CC 71 | Cutoff / Resonanz (Kanal 1 Bass, 2 Lead, sonst gewählter Kanal) |
+| CC 7 | Master-Lautstärke |
+| CC 120 / 123 | alle Noten aus |
+| Clock (24/Viertel) | Tempo folgt der Clock (Anzeige „EXT“) |
+| Start / Continue / Stop | Sequencer starten (Start: ab Step 1) / fortsetzen / anhalten |
+
+### Reglerseiten (A / B)
 
 | Seite | A | B |
 |---|---|---|
@@ -67,6 +116,8 @@ Reglerseiten (A / B):
 | ARP | Arp an, Style, Grid, Oktaven | Chord an, Akkordform, Voicing, Arp Gate |
 | SEL | Kanal-Preset, Mute, Level, Sweep-Tempo | – |
 
+![Bildschirm und Bedienfeld-LEDs aus der PC-Simulation](docs/leds.png)
+
 ## Aufbau
 
 ```
@@ -78,6 +129,7 @@ core/     hardwareunabhaengig (C99)
   gd_app      Bedienlogik und Ereignis-Warteschlange (Bedien-Task -> Audio-Task)
   gd_ui       Display, streifenweise gezeichnet (kein voller Bildspeicher noetig)
   gd_input    Tastenmatrix, Buttons, Drehgeber, MASTER-Poti
+  gd_leds     LED-Logik (27 Tasten-LEDs, Button-LEDs, PLAY gruen)
   gd_config.h Groessen und Spar-Schalter
 host/     PC-Werkzeuge (WAV-Renderer, Bedien-Simulation)
 tests/    Offline-Tests, Klangvergleich mit dem Plugin

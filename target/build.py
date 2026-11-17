@@ -21,7 +21,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 CORE = ["gd_dsp.c", "gd_arp.c", "gd_seq.c", "gd_preset.c", "gd_presets_data.c", "gd_app.c", "gd_ui.c",
-        "gd_ui_params.c", "gd_font.c", "gd_input.c"]
+        "gd_ui_params.c", "gd_font.c", "gd_input.c", "gd_leds.c"]
 SPEED = {"gd_dsp.c", "gd_seq.c", "gd_arp.c"}   # mit -O2 statt der SDK-Voreinstellung
 
 

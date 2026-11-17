@@ -14,6 +14,7 @@ static FILE *wav;
 static long frames;
 static char outdir[256] = ".";
 
+static void shot_panel(const char *name, uint32_t now);
 static void shot(const char *name)
 {
     char path[400];
@@ -34,7 +35,64 @@ static void shot(const char *name)
             }
     }
     fclose(f);
+    shot_panel(name, app.audioMs);
     printf("Bild: %s\n", path);
+}
+
+/* Bedienfeld mit LEDs (schematisch, keine Nachbildung des Gehaeuses): Buttons oben, 27 Tasten unten */
+extern const uint8_t gd_font5x7[95][5];
+#define PW 600
+#define PH 120
+static uint8_t panel[PH][PW][3];
+static void prect(int x, int y, int w, int h, int r, int g, int b)
+{
+    int i, j;
+    for (j = y; j < y + h && j < PH; ++j) for (i = x; i < x + w && i < PW; ++i) { panel[j][i][0] = (uint8_t)r; panel[j][i][1] = (uint8_t)g; panel[j][i][2] = (uint8_t)b; }
+}
+static void ptext(int x, int y, const char *t)
+{
+    for (; *t; ++t, x += 6) {
+        const uint8_t *g = gd_font5x7[(*t < 32 || *t > 126) ? 0 : *t - 32];
+        int cx, cy;
+        for (cx = 0; cx < 5; ++cx) for (cy = 0; cy < 7; ++cy) if (g[cx] & (1u << cy)) prect(x + cx, y + cy, 1, 1, 200, 200, 210);
+    }
+}
+static void led(int x, int y, int w, int v, int r, int g, int b)
+{
+    prect(x, y, w, 4, 50 + (r - 50) * v / 255, 50 + (g - 50) * v / 255, 56 + (b - 56) * v / 255);
+}
+static void shot_panel(const char *name, uint32_t now)
+{
+    static const char *bn[GB_COUNT] = { "FX", "SEL", "ENV", "LFO", "EDIT", "GLO", "HOME", "SAVE", "ARP", "SEQ", "PLAY", "REC", "OCT-", "OCT+" };
+    static const int order[GB_COUNT] = { GB_FX, GB_SEL, GB_ENV, GB_LFO, GB_EDIT, GB_GLO, GB_OCTDN, GB_HOME, GB_SAVE, GB_ARP, GB_SEQ, GB_PLAY, GB_REC, GB_OCTUP };
+    uint8_t keys[GD_KEYS], btn[GB_COUNT], green;
+    char path[400];
+    FILE *f;
+    int i;
+    gd_leds_compute(&app, now, keys, btn, &green);
+    prect(0, 0, PW, PH, 24, 26, 32);
+    for (i = 0; i < GB_COUNT; ++i) {
+        const int b = order[i], x = 8 + (i % 7) * 84, y = 6 + (i / 7) * 34;
+        prect(x, y, 76, 28, 44, 46, 56);
+        ptext(x + 6, y + 6, bn[b]);
+        if (b == GB_PLAY) { led(x + 4, y + 20, 32, btn[b], 255, 255, 255); led(x + 40, y + 20, 32, green, 60, 230, 90); }
+        else if (b == GB_REC) led(x + 4, y + 20, 68, btn[b], 255, 40, 40);
+        else led(x + 4, y + 20, 68, btn[b], 255, 255, 255);
+    }
+    for (i = 0; i < GD_KEYS; ++i) {
+        const int x = 8 + i * 21;
+        char nr[4];
+        prect(x, 78, 18, 36, 58, 60, 70);
+        led(x + 2, 82, 14, keys[i], 255, 255, 255);
+        snprintf(nr, sizeof nr, "%d", i + 1);
+        if (i < 9 || (i + 1) % 2 == 0) ptext(x + (i < 9 ? 6 : 3), 100, nr);
+    }
+    snprintf(path, sizeof path, "%s/%s_panel.ppm", outdir, name);
+    f = fopen(path, "wb");
+    if (!f) return;
+    fprintf(f, "P6\n%d %d\n255\n", PW, PH);
+    fwrite(panel, 1, sizeof panel, f);
+    fclose(f);
 }
 
 static void run(double secs)
@@ -72,6 +130,7 @@ int main(int argc, char **argv)
     fwrite("data\0\0\0\0", 1, 8, wav);
 
     gd_app_init(&app, SR);
+    gd_app_set_battery(&app, 72, 0);
     run(0.1);
     shot("01_start");
     btn(GB_PLAY); run(2.0);
@@ -85,8 +144,7 @@ int main(int argc, char **argv)
     enc(GE_SELECT, 1); btn(GB_ARP); run(0.05);
     enc(GE_K1, 1); enc(GE_K2, 9); run(0.05);  /* Lead: Arp an, Style */
     btn(GB_SEQ); run(0.05);                  /* PLAY-Modus: Tasten = Noten */
-    key(12, 0.6); key(16, 0.6);
-    shot("06_lead_arp");
+    gd_app_post_key(&app, 12, 1); run(0.45); shot("06_lead_arp"); gd_app_post_key(&app, 12, 0); run(0.2);
     btn(GB_SEQ); enc(GE_SELECT, -11); run(0.05); /* zurueck auf BD, STEP */
     key(2, 0.05); key(6, 0.05); key(10, 0.05);  /* Steps setzen */
     btn(GB_GLO); enc(GE_K2, 16); run(0.05);   /* Laenge 32 */
@@ -96,7 +154,7 @@ int main(int argc, char **argv)
     btn(GB_SEL); enc(GE_K1, 3); run(0.8); shot("09_kanal_preset");
     enc(GE_PRESETS, 57); run(0.3); shot("10_preset58");
     run(3.0);
-    btn(GB_SAVE); run(0.2); shot("11_saved");
+    gd_app_post_button(&app, GB_SAVE, 1); run(1.0); shot("11_saved"); gd_app_post_button(&app, GB_SAVE, 0);
     btn(GB_PLAY); run(0.5);
 
     fseek(wav, 4, SEEK_SET); w32((unsigned)(36 + frames * 4));

@@ -43,6 +43,7 @@ static void load_preset(gd_app *a, int idx)
     a->seq.playing = playing;
     memset(a->chanSel, 0xff, sizeof a->chanSel);
     a->stepPage = 0;
+    a->dirty = 0;
     snprintf(m, sizeof m, "%03d %s", idx + 1, gd_presets[idx].name);
     message(a, m);
 }
@@ -58,6 +59,7 @@ void gd_app_init(gd_app *a, float sampleRate)
     a->lastNote[1] = 60;
     a->part = 0;
     a->stepMode = 1;
+    a->battery = -1;
     load_preset(a, 0);
     a->msgMs = 0;
 }
@@ -94,6 +96,7 @@ float gd_param_value(const gd_app *a, const gd_pdesc *d)
 static void param_change(gd_app *a, const gd_pdesc *d, int delta)
 {
     float v = gd_param_value(a, d);
+    a->dirty = 1;
     if (d->kind == PK_CONT) v = gd_clampf(v + 0.01f * (float)delta, d->lo, d->hi);
     else if (d->kind == PK_TEMPO) v = gd_clampf((float)gd_roundi(v) + (float)delta, d->lo, d->hi);
     else if (d->scope == SC_CHAN) v = (float)gd_clampi(gd_roundi(v) + delta, 0, gd_chan_preset_count(a->part) - 1);
@@ -139,6 +142,7 @@ static void set_step(gd_app *a, int part, int step, int on, int note)
 {
     gd_pattern *pt = &a->seq.pat;
     if (step < 0 || step >= GD_MAX_STEPS) return;
+    a->dirty = 1;
     if (on) pt->stepMask[part] |= (uint64_t)1 << step;
     else pt->stepMask[part] &= ~((uint64_t)1 << step);
     if (on && gd_is_kbd(part)) { pt->kbdNote[part - GD_KBD1][step] = (uint8_t)note; pt->kbdLen[part - GD_KBD1][step] = 1; }
@@ -160,8 +164,8 @@ static void key_event(gd_app *a, int key, int down)
     if (down) {
         int p = part, note;
         if (gd_is_kbd(part)) {
-            note = gd_clampi(GD_KEY_BASE_NOTE + key + 12 * a->octave, 0, 127);
-            if (a->stepMode && key >= 16) note = gd_clampi(GD_KEY_BASE_NOTE + 12 + (key - 16) + 12 * a->octave, 0, 127);
+            note = gd_clampi(GD_KEY_BASE_NOTE + key + 12 * a->octave + a->transpose, 0, 127);
+            if (a->stepMode && key >= 16) note = gd_clampi(GD_KEY_BASE_NOTE + 12 + (key - 16) + 12 * a->octave + a->transpose, 0, 127);
             a->lastNote[part - GD_KBD1] = note;
         } else {
             /* Drum gewaehlt: unterste neun Tasten = Drum 1..7B (Fingerdrumming), sonst der gewaehlte Part */
@@ -200,18 +204,22 @@ static void do_save(gd_app *a)
     if (n < 0) { message(a, "Speicher voll"); return; }
     a->userLen = n;
     a->userValid = 1;
+    a->dirty = 0;
     if (a->save_hook && a->save_hook(a->user, n) != 0) message(a, "Flash-Fehler");
     else message(a, "Gespeichert");
 }
+
+#define GD_HOLD_MS 800
 
 static void button_event(gd_app *a, int b, int down)
 {
     static const int pageOf[GB_COUNT] = { PG_FX, PG_SEL, PG_ENV, PG_LFO, PG_EDIT, PG_GLO, PG_HOME, -1, PG_ARP, -1, -1, -1, -1, -1 };
     if (b < 0 || b >= GB_COUNT) return;
     a->btnDown[b] = down;
-    if (!down) return;
+    if (down) { a->btnDownMs[b] = a->audioMs; a->holdDone[b] = 0; a->comboUsed[b] = 0; }
     if (pageOf[b] >= 0) {
         const int pg = pageOf[b];
+        if (!down) return;
         if (pg == PG_ARP && !gd_is_kbd(a->part)) { message(a, "ARP nur fuer BS/LD"); return; }
         if (a->page == pg) a->sub ^= 1;      /* erneut druecken: Seite B */
         else { a->page = pg; a->sub = 0; }
@@ -219,40 +227,172 @@ static void button_event(gd_app *a, int b, int down)
     }
     switch (b) {
         case GB_PLAY:
-            gd_seq_set_playing(&a->seq, !a->seq.playing);
+            if (down) gd_seq_set_playing(&a->seq, !a->seq.playing);
             break;
         case GB_REC:
-            a->rec = !a->rec;
-            message(a, a->rec ? "Aufnahme an" : "Aufnahme aus");
+            if (down) { a->rec = !a->rec; message(a, a->rec ? "Aufnahme an" : "Aufnahme aus"); }
             break;
         case GB_SEQ:
-            a->stepMode = !a->stepMode;
-            message(a, a->stepMode ? "STEP: Tasten = Steps" : "PLAY: Tasten = Noten");
+            if (down) { a->stepMode = !a->stepMode; message(a, a->stepMode ? "STEP: Tasten = Steps" : "PLAY: Tasten = Noten"); }
             break;
-        case GB_SAVE:
-            if (a->btnDown[GB_SEL] && a->userValid) {      /* SEL + SAVE: gesicherten Stand laden */
-                gd_preset_load_data(&a->seq, a->user, a->userLen);
-                message(a, "Benutzerstand geladen");
-            } else do_save(a);
+        case GB_SAVE:   /* SAVE halten = sichern (wie die Werks-Firmware); SEL + SAVE = gesicherten Stand laden */
+            if (down && a->btnDown[GB_SEL]) {
+                a->holdDone[b] = 1;
+                if (a->userValid) { gd_preset_load_data(&a->seq, a->user, a->userLen); a->dirty = 0; message(a, "Benutzerstand geladen"); }
+                else message(a, "Noch nichts gesichert");
+            } else if (!down && !a->holdDone[b]) message(a, "SAVE halten zum Sichern");
             break;
         case GB_OCTDN:
-        case GB_OCTUP: {
+        case GB_OCTUP: {   /* wirkt beim Loslassen, damit OCT + ALGORITHM (Transpose) die Oktave nicht verstellt */
             const int d = b == GB_OCTUP ? 1 : -1;
+            const int other = b == GB_OCTUP ? GB_OCTDN : GB_OCTUP;
+            if (down && a->btnDown[other]) {
+                a->octave = 0; a->transpose = 0; a->stepPage = 0;
+                a->comboUsed[GB_OCTDN] = a->comboUsed[GB_OCTUP] = 1;
+                message(a, "Oktave und Transpose 0");
+                break;
+            }
+            if (down || a->comboUsed[b]) break;
             if (a->stepMode) {
                 const int pages = (a->seq.pat.patLen + 15) / 16;
                 a->stepPage = gd_clampi(a->stepPage + d, 0, pages - 1);
             } else a->octave = gd_clampi(a->octave + d, -3, 3);
-            if (a->btnDown[GB_OCTDN] && a->btnDown[GB_OCTUP]) { a->octave = 0; a->stepPage = 0; }
             break;
         }
         default: break;
     }
 }
 
+/* Halte-Funktionen, im Audio-Task je Block geprueft */
+static void check_holds(gd_app *a)
+{
+    if (a->btnDown[GB_SAVE] && !a->holdDone[GB_SAVE] && a->audioMs - a->btnDownMs[GB_SAVE] >= GD_HOLD_MS) {
+        a->holdDone[GB_SAVE] = 1;
+        do_save(a);
+    }
+    if (a->btnDown[GB_HOME] && !a->holdDone[GB_HOME] && a->audioMs - a->btnDownMs[GB_HOME] >= GD_HOLD_MS) {
+        a->holdDone[GB_HOME] = 1;
+        message(a, "Bluetooth-MIDI: noch nicht unterstuetzt");
+    }
+}
+
+/* ---------------------------------------------------------------- MIDI */
+/* Kanal 10: Drums nach GM-Notennummern; Kanal 1: Bass; Kanal 2: Lead; sonst: gewaehlter Kanal */
+static int midi_drum_part(int note)
+{
+    switch (note) {
+        case 35: case 36: return 0;            /* Bass Drum */
+        case 38: case 40: return 1;            /* Snare */
+        case 41: case 43: case 45: case 47: case 48: case 50: return 2; /* Toms */
+        case 37: case 56: case 75: case 76: case 77: return 3; /* Rim/Cowbell/Perc */
+        case 39: return 4;                     /* Clap */
+        case 42: case 44: return 5;            /* Hat zu */
+        case 46: return 6;                     /* Hat offen */
+        case 49: case 57: return 7;            /* Crash */
+        case 51: case 52: case 53: case 55: case 59: return 8; /* Ride/China/Splash */
+        default: return -1;
+    }
+}
+
+static void midi_event(gd_app *a, int status, int d1, int d2)
+{
+    const int ch = status & 15, type = status & 0xF0;
+    int part;
+    if (status >= 0xF8) {
+        switch (status) {
+            case 0xF8: { /* Clock: 24 je Viertel; Tempo ueber 24 Takte gemittelt */
+                const uint32_t now = a->audioMs;
+                if (!a->extClock || now - a->lastClockMs > 500u) { a->extClock = 1; a->clockCount = 0; a->clockT0Ms = now; }
+                a->lastClockMs = now;
+                if (++a->clockCount >= 24) {
+                    const uint32_t dt = now - a->clockT0Ms;
+                    if (dt > 100u && dt < 4000u) {
+                        const float bpm = 60000.0f / (float)dt;
+                        a->eng.g[GP_TEMPO] += 0.5f * (bpm - a->eng.g[GP_TEMPO]);
+                        gd_engine_update(&a->eng);
+                    }
+                    a->clockCount = 0;
+                    a->clockT0Ms = now;
+                }
+                break;
+            }
+            case 0xFA: a->seq.beat = 0.0f; gd_seq_set_playing(&a->seq, 1); break;   /* Start */
+            case 0xFB: gd_seq_set_playing(&a->seq, 1); break;                       /* Continue */
+            case 0xFC: gd_seq_set_playing(&a->seq, 0); break;                       /* Stop */
+            default: break;
+        }
+        return;
+    }
+    if (type == 0x90 || type == 0x80) {
+        const int on = type == 0x90 && d2 > 0;
+        int note = d1;
+        if (ch == 9) { part = midi_drum_part(d1); if (part < 0) return; note = 60; }
+        else if (ch == 0) part = GD_KBD1;
+        else if (ch == 1) part = GD_KBD2;
+        else { part = a->part; if (!gd_is_kbd(part)) note = 60; }
+        if (part == GD_ACCENT) return;
+        gd_seq_key(&a->seq, part, note, on ? d2 : 0, on);
+        if (on && a->rec && a->seq.playing) {
+            const int pl = a->seq.pat.patLen;
+            int step = gd_roundi(a->seq.beat * 4.0f) % pl;
+            if (step < 0) step += pl;
+            set_step(a, part, step, 1, note);
+        }
+        return;
+    }
+    if (type == 0xB0) {
+        part = ch == 0 ? GD_KBD1 : ch == 1 ? GD_KBD2 : a->part;
+        switch (d1) {
+            case 7: a->eng.g[GP_MASTERVOL] = (float)d2 / 127.0f; break;
+            case 71: a->eng.parts[part].p[PF_RESO] = (float)d2 / 127.0f; break;
+            case 74: a->eng.parts[part].p[PF_CUTOFF] = (float)d2 / 127.0f; break;
+            case 120: case 123: gd_seq_panic(&a->seq); break;
+            default: return;
+        }
+        gd_engine_update(&a->eng);
+    }
+}
+
+void gd_midi_byte(gd_midi *m, gd_app *a, uint8_t b)
+{
+    if (b >= 0xF8) { post(a, EV_MIDI, b, 0); return; }          /* Echtzeit: sofort, ohne Running Status */
+    if (b == 0xF0) { m->sysex = 1; return; }
+    if (m->sysex) { if (b == 0xF7 || (b & 0x80)) m->sysex = 0; if (b == 0xF7 || !(b & 0x80)) return; }
+    if (b & 0x80) {
+        m->status = (b >= 0xF0) ? 0 : b;                        /* Systemmeldungen ignorieren */
+        m->n = 0;
+        return;
+    }
+    if (!m->status) return;
+    {
+        const int need = ((m->status & 0xF0) == 0xC0 || (m->status & 0xF0) == 0xD0) ? 1 : 2;
+        if (m->n == 0) { m->d0 = b; m->n = 1; if (need == 2) return; }
+        post(a, EV_MIDI, m->status, need == 2 ? (m->d0 | (b << 7)) : m->d0);
+        m->n = 0;                                               /* Running Status bleibt */
+    }
+}
+
+void gd_app_set_battery(gd_app *a, int percent, int charging)
+{
+    const int was = a->battery;
+    a->battery = percent < 0 ? -1 : gd_clampi(percent, 0, 100);
+    a->charging = charging ? 1 : 0;
+    if (a->battery >= 0 && a->battery < 5 && !a->charging && (was < 0 || was >= 5)) message(a, "AKKU FAST LEER");
+    ++a->uiStamp;
+}
+
 static void encoder_event(gd_app *a, int enc, int delta)
 {
     if (enc == GE_SELECT) { select_part(a, delta); return; }
     if (enc == GE_PRESETS) { load_preset(a, a->preset + delta); return; }
+    if (enc == GE_ALGO && (a->btnDown[GB_OCTDN] || a->btnDown[GB_OCTUP])) { /* OCT halten + ALGORITHM: Transpose */
+        char m[32];
+        a->transpose = gd_clampi(a->transpose + delta, -12, 12);
+        a->comboUsed[GB_OCTDN] = a->comboUsed[GB_OCTUP] = 1;
+        snprintf(m, sizeof m, "Transpose %+d", a->transpose);
+        message(a, m);
+        return;
+    }
     if (enc == GE_ALGO) { /* Tempo */
         a->eng.g[GP_TEMPO] = gd_clampf((float)gd_roundi(a->eng.g[GP_TEMPO]) + (float)delta, 20.0f, 300.0f);
         gd_engine_update(&a->eng);
@@ -274,11 +414,31 @@ static void apply_events(gd_app *a)
             case EV_BTN: button_event(a, e.a, e.b); break;
             case EV_ENC: encoder_event(a, e.a, e.b); break;
             case EV_MASTER: a->eng.g[GP_MASTERVOL] = (float)e.b / 1000.0f; break;
+            case EV_MIDI: midi_event(a, e.a, e.b & 127, (e.b >> 7) & 127); break;
             default: break;
         }
         ++a->uiStamp;
     }
     if (!is_ui_part(a->part)) a->part = 0;
+}
+
+static void advance(gd_app *a, int n)
+{
+    static uint32_t frac; /* Rest in Sample*1000 */
+    uint32_t act;
+    int p, ms;
+    frac += (uint32_t)n * 1000u;
+    ms = (int)(frac / (uint32_t)a->eng.sr);
+    frac -= (uint32_t)ms * (uint32_t)a->eng.sr;
+    a->audioMs += (uint32_t)ms;
+    act = a->eng.activity;
+    a->eng.activity = 0;
+    for (p = 0; p < GD_PARTS; ++p) {
+        if ((act >> p) & 1u) a->flashMs[p] = 90;
+        else if (a->flashMs[p] > 0) a->flashMs[p] -= ms;
+    }
+    if (a->extClock && a->audioMs - a->lastClockMs > 1000u) a->extClock = 0;
+    check_holds(a);
 }
 
 void gd_app_audio(gd_app *a, float *l, float *r, int n)
@@ -288,6 +448,7 @@ void gd_app_audio(gd_app *a, float *l, float *r, int n)
     apply_events(a);
     for (i = 0; i < n; ++i) l[i] = r[i] = 0.0f;
     gd_seq_render(&a->seq, l, r, n);
+    advance(a, n);
     if (a->seq.currentStep != step) ++a->uiStamp;
 }
 
@@ -305,5 +466,6 @@ void gd_app_audio_voices(gd_app *a, gd_bus *bus, int n)
     if (s->playing) { e->beatPos = s->beat; s->beat += bps * (float)n; } else s->beat = 0.0f;
     gd_seq_wrap(s);
     gd_engine_render_voices(e, bus, n);
+    advance(a, n);
     if (s->currentStep != step) ++a->uiStamp;
 }

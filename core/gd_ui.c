@@ -97,10 +97,16 @@ static void draw_header(const gd_app *a, gd_canvas *c)
         for (i = 0; i < 9; ++i) fill(c, 226 + i, 4 + i / 2, 1, 10 - (i / 2) * 2, C_PLAY);
     } else fill(c, 226, 5, 8, 8, C_DIM);
     if (a->rec) fill(c, 214, 6, 7, 7, C_REC);
+    if (a->battery >= 0) {   /* Akku: Rahmen 14 x 8, Fuellung nach Ladestand, gruen beim Laden, rot unter 15 % */
+        const uint16_t col = a->charging ? C_PLAY : (a->battery < 15 ? C_REC : C_TEXT);
+        fill(c, 192, 5, 14, 1, C_DIM); fill(c, 192, 12, 14, 1, C_DIM);
+        fill(c, 192, 5, 1, 8, C_DIM); fill(c, 205, 5, 1, 8, C_DIM); fill(c, 206, 7, 2, 4, C_DIM);
+        fill(c, 194, 7, (a->battery * 10 + 50) / 100, 4, col);
+    }
     snprintf(b, sizeof b, "%s / %s", gd_genre_names[pe->genre], gd_sub_names[pe->genre][pe->sub]);
     text(c, 4, 22, b, C_DIM, 1);
-    snprintf(b, sizeof b, "%.1f", (double)a->eng.g[GP_TEMPO]);
-    text(c, 236 - text_w(b, 1), 22, b, C_TEXT, 1);
+    snprintf(b, sizeof b, "%s%.1f", a->extClock ? "EXT " : "", (double)a->eng.g[GP_TEMPO]);
+    text(c, 236 - text_w(b, 1), 22, b, a->extClock ? C_PLAY : C_TEXT, 1);
 }
 
 static void draw_parts(const gd_app *a, gd_canvas *c)
@@ -148,7 +154,10 @@ static void draw_steps(const gd_app *a, gd_canvas *c)
     }
     snprintf(b, sizeof b, "%s %d-%d/%d", a->stepMode ? "STEP" : "PLAY", base + 1, base + 16 < pl ? base + 16 : pl, pl);
     text(c, 4, 106, b, a->stepMode ? C_ACC : C_PLAY, 1);
-    if (!a->stepMode && a->octave) { snprintf(b, sizeof b, "OKT %+d", a->octave); text(c, 120, 106, b, C_TEXT, 1); }
+    if (!a->stepMode && (a->octave || a->transpose)) {
+        snprintf(b, sizeof b, "OKT %+d TR %+d", a->octave, a->transpose);
+        text(c, 100, 106, b, C_TEXT, 1);
+    }
     if (kbd) {
         char nn[8];
         note_name(a->lastNote[part - GD_KBD1], nn, sizeof nn);
