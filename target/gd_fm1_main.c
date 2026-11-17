@@ -33,7 +33,7 @@
 #endif
 #define GD_SR 44100
 #define GD_AUDIO_FRAMES 64           /* = eine DMA-Haelfte (512 Byte) */
-#define GD_RING_BLOCKS 16            /* 16 x 1,45 ms = 23 ms Puffer */
+#define GD_RING_BLOCKS 32            /* 32 x 1,45 ms = 46 ms Puffer (Reserve, solange das Display ueber SPI sendet) */
 
 const struct irq_info irq_info_table[] = { { -1, -1, -1 } };
 const struct task_info task_info_table[] = {
@@ -188,20 +188,43 @@ static int lcd_cmd(uint8_t c, const uint8_t *p, size_t n)
     return n ? fm1_display_write(1, p, n) : 0;
 }
 
+/* Nur Streifen uebertragen, die sich seit dem letzten Bild geaendert haben (Pruefsumme je 16-Zeilen-Streifen).
+   Die SPI-Uebertragung wartet aktiv auf das Ende; ein volles Bild kostet so ein Vielfaches der Rechenzeit
+   eines Streifens. Beim Spielen aendern sich meist nur Step-Zeile, Pegelanzeige und Kopfzeile. */
+static uint32_t strip_sum[GD_LCD_H / 16];
+static int strips_valid;
+
+static uint32_t strip_hash(void)
+{
+    uint32_t h = 2166136261u;
+    int i;
+    for (i = 0; i < 16 * GD_LCD_W; ++i) h = (h ^ strip[i]) * 16777619u;
+    return h;
+}
+
 static void draw_screen(void)
 {
     static const uint8_t cols[4] = { 0, 0, 0, 239 };
-    int y0, i;
-    if (lcd_cmd(0x2a, cols, 4)) return;
+    int y0, i, cols_sent = 0;
     for (y0 = 0; y0 < GD_LCD_H; y0 += 16) {
         gd_canvas c;
         const unsigned ya = (unsigned)(y0 + GD_LCD_Y_OFFSET), yb = ya + 15u;
         const uint8_t rows[4] = { (uint8_t)(ya >> 8), (uint8_t)ya, (uint8_t)(yb >> 8), (uint8_t)yb };
         c.px = strip; c.y0 = y0; c.h = 16;
         gd_ui_draw(&app, &c);
+        {
+            const uint32_t h = strip_hash();
+            if (strips_valid && strip_sum[y0 / 16] == h) continue;
+            strip_sum[y0 / 16] = h;
+        }
+        if (!cols_sent) { if (lcd_cmd(0x2a, cols, 4)) { strips_valid = 0; return; } cols_sent = 1; }
         for (i = 0; i < 16 * GD_LCD_W; ++i) { wire[2 * i] = (uint8_t)(strip[i] >> 8); wire[2 * i + 1] = (uint8_t)strip[i]; }
-        if (lcd_cmd(0x2b, rows, 4) || lcd_cmd(0x2c, 0, 0) || fm1_display_write(1, wire, sizeof wire)) return;
+        if (lcd_cmd(0x2b, rows, 4) || lcd_cmd(0x2c, 0, 0) || fm1_display_write(1, wire, sizeof wire)) {
+            strips_valid = 0;   /* Fehler: beim naechsten Mal alles neu */
+            return;
+        }
     }
+    strips_valid = 1;
 }
 
 /* Rueckruf des Display-Treibers (fm1-nes): SPI1/DMA-Register in den Startphasen. Nur zur Fehlersuche,
@@ -216,7 +239,6 @@ void fm1_display_snapshot(unsigned phase, const uint32_t registers[FM1_LCD_REGIS
 
 static uint32_t now_us(void *ctx) { (void)ctx; return timer_get_ms() * 1000u; }
 
-__attribute__((noinline, used))
 /* MASTER-Poti starten: im Emulator eine Fassung von fm1_volume_start (fm1-nes, Apache-2.0) ohne die zwei
    Zugriffe, die der Emulator nicht nachbildet (PB-Register +0x20 und ANA PLL_CON1 0x119A4). Auf dem Geraet
    unveraendert fm1_volume_start. Abfrage danach in beiden Faellen mit fm1_volume_tick. */
@@ -235,6 +257,7 @@ static void gd_volume_start(fm1_volume *s)
     GD_RD(0x13100u) = 0xf44eu; GD_CHG(0x13100u, 0, 0x10); GD_CHG(0x13100u, 0, 0x40);
 }
 
+__attribute__((noinline, used))
 static void gd_ui_task(void *arg)
 {
     uint8_t rows[FM1_STOCK_SCAN_ROWS];
