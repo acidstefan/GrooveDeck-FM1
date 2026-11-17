@@ -99,7 +99,7 @@ def main():
     for src, name in ((sdk / "cpu/wl82/sdk_ld.c", "sdk.ld"), (sdk / "cpu/wl82/sdk_used_list.c", "sdk.used")):
         run([clang, *flags, *defines, *includes, "-D__LD__", "-E", "-P", src, "-o", out / name])
     used = out / "sdk.used"
-    used.write_text(used.read_text() + "\nmemory_init\ngd_audio_task\ngd_ui_task\ngd_alink_isr\n")
+    used.write_text(used.read_text() + "\nmemory_init\ngd_audio_task\ngd_ui_task\ngd_alink_isr\nfm1_display_snapshot\n")
     ld = (out / "sdk.ld").read_text()
     ld = ld.replace("*(.data)", "*(.data .data.*)", 1).replace("*(.bss)", "*(.bss .bss.*)", 1)
     (out / "sdk.ld").write_text(ld)

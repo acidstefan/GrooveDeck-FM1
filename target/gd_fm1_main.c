@@ -145,6 +145,16 @@ static void draw_screen(void)
     }
 }
 
+/* Rueckruf des Display-Treibers (fm1-nes): SPI1/DMA-Register in den Startphasen. Nur zur Fehlersuche,
+   z. B. per Emulator-Speicheransicht. */
+volatile uint32_t gd_lcd_regs[5][FM1_LCD_REGISTER_COUNT];
+void fm1_display_snapshot(unsigned phase, const uint32_t registers[FM1_LCD_REGISTER_COUNT])
+{
+    unsigned i;
+    if (phase >= 5u || !registers) return;
+    for (i = 0; i < FM1_LCD_REGISTER_COUNT; ++i) gd_lcd_regs[phase][i] = registers[i];
+}
+
 static uint32_t now_us(void *ctx) { (void)ctx; return timer_get_ms() * 1000u; }
 
 __attribute__((noinline, used))
