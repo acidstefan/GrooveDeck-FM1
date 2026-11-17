@@ -92,16 +92,21 @@ def main():
 
     sources = [(make.parent / x).resolve() for n in ("c_SRC_FILES", "S_SRC_FILES") for x in make_list(text, n)]
     sources = [s for s in sources if s.name not in ("app_main.c", "board.c", "cpp_run_init.c")]
-    sources += [nb / n for n in ("board.c", "boot_compat.c", "boot_trace.c", "board_power.c", "display_test.c")]
+    sources += [nb / n for n in ("board.c", "boot_trace.c", "board_power.c", "display_test.c")]
+    sources += [HERE / "gd_boot_compat.c"]   # statt fm1-nes boot_compat.c: auch Start als rohe .bin im Emulator
     sources += [ns / n for n in ("fm1_wl82_keyscan.c", "fm1_stock_keys.c", "fm1_volume.c")]
     sources += [ROOT / "core" / n for n in CORE] + [HERE / "gd_fm1_main.c"]
 
     for src, name in ((sdk / "cpu/wl82/sdk_ld.c", "sdk.ld"), (sdk / "cpu/wl82/sdk_used_list.c", "sdk.used")):
         run([clang, *flags, *defines, *includes, "-D__LD__", "-E", "-P", src, "-o", out / name])
     used = out / "sdk.used"
-    used.write_text(used.read_text() + "\nmemory_init\ngd_audio_task\ngd_ui_task\ngd_alink_isr\nfm1_display_snapshot\n")
+    used.write_text(used.read_text() + "\nmemory_init\n__wrap_boot_info_init\ngd_audio_task\ngd_ui_task\ngd_alink_isr\nfm1_display_snapshot\n")
     ld = (out / "sdk.ld").read_text()
     ld = ld.replace("*(.data)", "*(.data .data.*)", 1).replace("*(.bss)", "*(.bss .bss.*)", 1)
+    # wie fm1-nes: keine automatische Reparatur der Flash-Konfiguration beim Start
+    for sec in (".syscfg.2.ops", ".syscfg.1.ops"):
+        ld = ld.replace("*(" + sec + ")", "/* no persistent cfg repair */", 1)
+    ld += "\nSECTIONS { /DISCARD/ : { *(.syscfg.2.ops) *(.syscfg.1.ops) } }\n"
     (out / "sdk.ld").write_text(ld)
 
     objects = []
@@ -127,6 +132,10 @@ def main():
         parts.append(f.read_bytes())
     app = out / "groovedeck.app.bin"
     app.write_bytes(b"".join(parts))
+    for nm, args in (("symbols.txt", ["-n", "-S"]),):
+        nmtool = [t for t in (tc / "llvm-nm", tc / "nm", tc / "llvm-nm.exe") if t.exists()]
+        if nmtool:
+            (out / nm).write_text(run([nmtool[0], *args, elf]))
     print("fertig: %s (%d Byte)" % (app, app.stat().st_size))
     print("Emulator:  emulator %s" % app)
 
