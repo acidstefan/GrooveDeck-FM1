@@ -45,7 +45,7 @@ def tool(tc, names):
     raise SystemExit("Werkzeug nicht gefunden: %s (gesucht in %s)" % (" / ".join(names), ", ".join(map(str, dirs))))
 
 
-def emulator_patch(img):
+def emulator_patch(img, symbols=None):
     """Fassung fuer den fm1-emulator: Der kennt 'clz' nicht als Haelfte eines Parallelbefehls
     (F180 xxxx + 16-Bit-Befehl). Solche Paare werden in 'Schwanz, dann clz' (E180, seriell) umgestellt.
     Nur wenn das gleichwertig ist: Der Schwanz ist ein Lade-/Speicherbefehl der Familie 0x6000 und
@@ -66,6 +66,21 @@ def emulator_patch(img):
         d[i:i + 6] = bytes([d[i + 4], d[i + 5], 0x80, 0xE1, d[i + 2], d[i + 3]])
         n += 1
     print("Emulator-Fassung: %d Parallelbefehl(e) umgestellt" % n)
+    # Init-Tabelle: sdfile_init (sucht ein Flash-Dateisystem, das es bei roher .bin nicht gibt) -> gd_initcall_noop
+    if symbols:
+        addr = {}
+        for line in symbols.splitlines():
+            parts = line.split()
+            if len(parts) >= 3 and len(parts[0]) == 8:
+                addr[parts[-1]] = int(parts[0], 16)
+        slot, noop = addr.get("__initcall_sdfile_init"), addr.get("gd_initcall_noop")
+        if slot is not None and noop is not None:
+            off = slot - 0x02000120
+            if 0 <= off <= len(d) - 4:
+                d[off:off + 4] = noop.to_bytes(4, "little")
+                print("Emulator-Fassung: sdfile_init in der Init-Tabelle ersetzt")
+        else:
+            print("Hinweis: __initcall_sdfile_init/gd_initcall_noop nicht in der Symbolliste")
     return bytes(d)
 
 
@@ -124,7 +139,7 @@ def main():
     for src, name in ((sdk / "cpu/wl82/sdk_ld.c", "sdk.ld"), (sdk / "cpu/wl82/sdk_used_list.c", "sdk.used")):
         run([clang, *flags, *defines, *includes, "-D__LD__", "-E", "-P", src, "-o", out / name])
     used = out / "sdk.used"
-    used.write_text(used.read_text() + "\nmemory_init\n__wrap_boot_info_init\n__wrap_sdfile_init\ngd_audio_task\ngd_ui_task\ngd_alink_isr\nfm1_display_snapshot\n")
+    used.write_text(used.read_text() + "\nmemory_init\n__wrap_boot_info_init\ngd_initcall_noop\ngd_audio_task\ngd_ui_task\ngd_alink_isr\nfm1_display_snapshot\n")
     ld = (out / "sdk.ld").read_text()
     ld = ld.replace("*(.data)", "*(.data .data.*)", 1).replace("*(.bss)", "*(.bss .bss.*)", 1)
     # wie fm1-nes: keine automatische Reparatur der Flash-Konfiguration beim Start
@@ -146,7 +161,7 @@ def main():
     libs += [sdk / "cpu/wl82/liba" / n for n in ("cpu.a", "event.a", "system.a", "cfg_tool.a", "fs.a", "common_lib.a", "update.a")]
     elf = out / "groovedeck.elf"
     run([lto, "-o", elf, *objects, "--start-group", *libs, "--end-group", "-T" + str(out / "sdk.ld"),
-         "-M=" + str(out / "groovedeck.map"), "--wrap=boot_info_init", "--wrap=memory_init", "--wrap=sdfile_init", "--undefined=memory_init",
+         "-M=" + str(out / "groovedeck.map"), "--wrap=boot_info_init", "--wrap=memory_init", "--undefined=memory_init",
          "--plugin-opt=mcpu=r3", "--plugin-opt=-mattr=+fprev1", "--plugin-opt=-pi32v2-large-program=true",
          "--plugin-opt=-used-symbol-file=" + str(used)])
     parts = []
@@ -160,8 +175,9 @@ def main():
         nmtool = [t for t in (tc / "llvm-nm", tc / "nm", tc / "llvm-nm.exe") if t.exists()]
         if nmtool:
             (out / nm).write_text(run([nmtool[0], *args, elf]))
+    syms = (out / "symbols.txt").read_text() if (out / "symbols.txt").exists() else None
     emu = out / "groovedeck-emu.bin"
-    emu.write_bytes(emulator_patch(app.read_bytes()))
+    emu.write_bytes(emulator_patch(app.read_bytes(), syms))
     print("fertig: %s (%d Byte)" % (app, app.stat().st_size))
     print("Emulator:  emulator %s" % emu)
 

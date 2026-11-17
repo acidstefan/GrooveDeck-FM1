@@ -41,15 +41,11 @@ void __wrap_boot_info_init(const volatile uint32_t *stock_argument)
     __real_boot_info_init(sdk_argument);
 }
 
-/* Ressourcen-Dateisystem des SDK: Bei einer rohen .bin (Emulator) gibt es im Flash kein JLFS-Dateisystem;
-   sdfile_init loest dann absichtlich einen Neustart aus. GrooveDeck braucht keine Flash-Ressourcen
-   (Presets stecken im Programm). Ohne Bootloader-Uebergabe (Wort an 0x01C7FE08 ist 0) wird es uebersprungen,
-   auf dem Geraet laeuft es normal. */
-extern int __real_sdfile_init(void);
-
+/* Ersatz fuer die Init-Funktion des SDK-Ressourcen-Dateisystems (sdfile_init), nur in der Emulator-Fassung:
+   build.py traegt diese Funktion dort in die Init-Tabelle ein. Bei einer rohen .bin gibt es im Flash kein
+   JLFS-Dateisystem und sdfile_init loest einen Neustart aus; GrooveDeck braucht keine Flash-Ressourcen. */
 __attribute__((noinline, used))
-int __wrap_sdfile_init(void)
+int gd_initcall_noop(void)
 {
-    if (*(const volatile uint32_t *)0x01C7FE08u == 0u) return 0;
-    return __real_sdfile_init();
+    return 0;
 }
