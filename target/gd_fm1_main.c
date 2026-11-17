@@ -73,9 +73,65 @@ static void gd_alink_isr(void)
     iis_irq_handler(0); /* SDK: ruft iis_output fuer die fertige DMA-Haelfte */
 }
 
+/* ---- Direkter ALNK0-Treiber fuer den fm1-emulator ----
+   Der Emulator bildet ALNK0 nur mit wenigen Registern nach (CON0/CON1/Pending/CON3/DMA-Adresse/Laenge);
+   der SDK-Treiber beschreibt weitere und bricht dort ab. Die Emulator-Fassung (build.py) setzt
+   gd_emu_flag auf GD_EMU_ON; dann wird dieser Treiber benutzt. Auf dem Geraet laeuft der SDK-Treiber. */
+/* Kennwert statt 0, damit der Wert sicher im Flash (.rodata) liegt und nicht in .bss */
+#define GD_EMU_OFF 0x47444530u /* "GDE0" */
+#define GD_EMU_ON 0x47444531u  /* "GDE1" */
+__attribute__((used)) const volatile uint32_t gd_emu_flag = GD_EMU_OFF;
+#define GD_EMU (gd_emu_flag == GD_EMU_ON)
+
+#define ALNK_BASE 0x12E00u
+#define ALNK_CON0 (*(volatile uint16_t *)(ALNK_BASE + 0x00u))
+#define ALNK_CON1 (*(volatile uint16_t *)(ALNK_BASE + 0x04u))
+#define ALNK_PEND (*(volatile uint8_t *)(ALNK_BASE + 0x08u))
+#define ALNK_CON3 (*(volatile uint8_t *)(ALNK_BASE + 0x0Cu))
+#define ALNK_ADR (*(volatile uint32_t *)(ALNK_BASE + 0x1Cu))
+#define ALNK_LEN (*(volatile uint16_t *)(ALNK_BASE + 0x20u))
+#define ALNK_DMA_ON 0x0800u
+#define ALNK_ACTIVE_HALF 0x8000u
+#define ALNK_HALF_PENDING 0x80u
+
+static int32_t alnk_buf[2][GD_AUDIO_FRAMES * 2] __attribute__((aligned(4)));
+
+static void fill_half(int32_t *dst)
+{
+    if (ring_r == ring_w) { memset(dst, 0, sizeof alnk_buf[0]); ++gd_underruns; return; }
+    memcpy(dst, ring[ring_r % GD_RING_BLOCKS], sizeof alnk_buf[0]);
+    ring_r = ring_r + 1;
+}
+
+___interrupt
+static void gd_alnk_direct_isr(void)
+{
+    if (ALNK_PEND & ALNK_HALF_PENDING) {
+        /* die gerade fertig gewordene Haelfte ist die nicht aktive */
+        const unsigned active = (ALNK_CON0 & ALNK_ACTIVE_HALF) ? 1u : 0u;
+        ++gd_audio_irqs;
+        fill_half(alnk_buf[active ^ 1u]);
+        ALNK_PEND = (uint8_t)(ALNK_PEND | (ALNK_HALF_PENDING >> 4));   /* quittieren */
+    }
+}
+
+static int audio_start_direct(void)
+{
+    memset(alnk_buf, 0, sizeof alnk_buf);
+    ALNK_CON0 = 0;
+    ALNK_CON1 = 0x5000u;
+    ALNK_CON3 = 0x83u;
+    ALNK_ADR = (uint32_t)(uintptr_t)alnk_buf;
+    ALNK_LEN = (uint16_t)(GD_AUDIO_FRAMES * 2);
+    request_irq(IRQ_ALNK_IDX, 3, gd_alnk_direct_isr, 0);
+    ALNK_CON0 = (uint16_t)(0x0180u | ALNK_DMA_ON);
+    return 0;
+}
+
 static int audio_start(void)
 {
     struct iis_platform_data pd;
+    if (GD_EMU) return audio_start_direct();
     memset(&pd, 0, sizeof pd);
     pd.port_sel = IIS_PORTC;
     pd.channel_out = (u8)(1u << 3);   /* Werks-Route: ALINK0 Kanal 3 (PC6 = DATA) */
@@ -104,9 +160,12 @@ static void gd_audio_task(void *arg)
             const uint32_t t0 = timer_get_ms();
             int i;
             gd_app_audio(&app, l, r, GD_AUDIO_FRAMES);
-            for (i = 0; i < GD_AUDIO_FRAMES; ++i) {
-                dst[2 * i] = (int32_t)(gd_clampf(l[i], -1.0f, 1.0f) * 8388607.0f);
-                dst[2 * i + 1] = (int32_t)(gd_clampf(r[i], -1.0f, 1.0f) * 8388607.0f);
+            {   /* Geraet: 24 Bit rechtsbuendig; Emulator gibt die Worte als 32 Bit aus -> linksbuendig */
+                const float full = GD_EMU ? 2147483392.0f : 8388607.0f;
+                for (i = 0; i < GD_AUDIO_FRAMES; ++i) {
+                    dst[2 * i] = (int32_t)(gd_clampf(l[i], -1.0f, 1.0f) * full);
+                    dst[2 * i + 1] = (int32_t)(gd_clampf(r[i], -1.0f, 1.0f) * full);
+                }
             }
             ring_w = ring_w + 1;
             {

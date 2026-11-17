@@ -73,6 +73,13 @@ def emulator_patch(img, symbols=None):
             parts = line.split()
             if len(parts) >= 3 and len(parts[0]) == 8:
                 addr[parts[-1]] = int(parts[0], 16)
+        flag = addr.get("gd_emu_flag")
+        fo = flag - 0x02000120 if flag is not None else -1
+        if 0 <= fo <= len(d) - 4 and d[fo:fo + 4] == (0x47444530).to_bytes(4, "little"):
+            d[fo:fo + 4] = (0x47444531).to_bytes(4, "little")
+            print("Emulator-Fassung: direkter Audiotreiber eingeschaltet")
+        else:
+            print("Hinweis: gd_emu_flag liegt nicht im Flash-Bild")
         slot, noop = addr.get("__initcall_sdfile_init"), addr.get("gd_initcall_noop")
         if slot is not None and noop is not None:
             off = slot - 0x02000120
@@ -139,7 +146,7 @@ def main():
     for src, name in ((sdk / "cpu/wl82/sdk_ld.c", "sdk.ld"), (sdk / "cpu/wl82/sdk_used_list.c", "sdk.used")):
         run([clang, *flags, *defines, *includes, "-D__LD__", "-E", "-P", src, "-o", out / name])
     used = out / "sdk.used"
-    used.write_text(used.read_text() + "\nmemory_init\n__wrap_boot_info_init\ngd_initcall_noop\ngd_audio_task\ngd_ui_task\ngd_alink_isr\nfm1_display_snapshot\n")
+    used.write_text(used.read_text() + "\nmemory_init\n__wrap_boot_info_init\ngd_initcall_noop\ngd_emu_flag\ngd_alnk_direct_isr\ngd_audio_task\ngd_ui_task\ngd_alink_isr\nfm1_display_snapshot\n")
     ld = (out / "sdk.ld").read_text()
     ld = ld.replace("*(.data)", "*(.data .data.*)", 1).replace("*(.bss)", "*(.bss .bss.*)", 1)
     # wie fm1-nes: keine automatische Reparatur der Flash-Konfiguration beim Start
