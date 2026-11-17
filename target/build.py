@@ -7,7 +7,8 @@ aber ohne USB/NES-Teile. Ergebnis: build/groovedeck.app.bin (fuer den fm1-emulat
 Umgebungsvariablen (wie bei fm1-nes):
   FM1_NES_DIR        Klon von https://github.com/Keitark/fm1-nes            (Pflicht)
   FM1_SDK_DIR        AC79-SDK (Standard: $FM1_NES_DIR/.deps/ac79-sdk, per "python scripts/dependencies.py --fetch")
-  FM1_TOOLCHAIN_DIR  Ordner mit clang(.exe), pi32v2-lto-wrapper(.exe), llvm-objcopy(.exe)  (Windows: C:/JL/pi32/bin)
+  FM1_TOOLCHAIN_DIR  Ordner mit clang(.exe) und lto-wrapper  (Linux: .../jieli-linux-toolchains-*/pi32v2/bin,
+                     Windows: C:/JL/pi32/bin)
 
 Aufruf:  python target/build.py [--out build] [--y-offset 0|40] [--lean]
 """
@@ -32,11 +33,16 @@ def make_list(text, name):
     return m.group(1).replace("\\\n", " ").split()
 
 
-def tool(tc, name):
-    for cand in (tc / (name + ".exe"), tc / name):
-        if cand.exists():
-            return cand
-    raise SystemExit("Werkzeug nicht gefunden: %s in %s" % (name, tc))
+def tool(tc, names):
+    """Sucht ein Werkzeug unter mehreren Namen in der Toolchain (auch im Nachbarordner common/bin
+    der Linux-Toolchain, z. B. .../pi32v2/bin und .../common/bin)."""
+    dirs = [tc, tc.parent.parent / "common" / "bin", tc.parent / "common" / "bin"]
+    for d in dirs:
+        for n in names:
+            for cand in (d / (n + ".exe"), d / n):
+                if cand.exists():
+                    return cand
+    raise SystemExit("Werkzeug nicht gefunden: %s (gesucht in %s)" % (" / ".join(names), ", ".join(map(str, dirs))))
 
 
 def main():
@@ -54,7 +60,10 @@ def main():
     make = sdk / "apps/demo/demo_hello/board/wl82/Makefile"
     if not make.exists():
         raise SystemExit("AC79-SDK nicht gefunden: " + str(make))
-    clang, lto, objcopy = tool(tc, "clang"), tool(tc, "pi32v2-lto-wrapper"), tool(tc, "llvm-objcopy")
+    clang = tool(tc, ["clang"])
+    lto = tool(tc, ["pi32v2-lto-wrapper", "lto-wrapper"])
+    objcopy = tool(tc, ["llvm-objcopy", "pi32v2-objcopy", "objcopy", "llvm-objcopy-4.0"])
+    print("Werkzeuge:", clang, lto, objcopy, sep="\n  ")
     out = a.out.resolve()
     out.mkdir(parents=True, exist_ok=True)
     log = (out / "build.log").open("w", encoding="utf-8")

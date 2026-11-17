@@ -9,7 +9,7 @@ Die Musik-Engine selbst (`core/`) ist fertig und am PC geprüft (siehe Haupt-REA
 | Was | Woher | Hinweis |
 |---|---|---|
 | WSL2 mit Ubuntu | `wsl --install` in einer Admin-PowerShell | für Toolchain (Linux) und Emulator |
-| JieLi-Toolchain (clang 4.0.1 für pi32v2) | `curl -fL https://pkgman.jieliapp.com/s/linux-toolchain \| tar -xJ -C ~/.jieli` | dieselbe Quelle, die Felucca nutzt; Ordner `~/.jieli/jieli-linux-toolchains-*/bin` |
+| JieLi-Toolchain (clang 4.0.1 für pi32v2) | `curl -fL https://pkgman.jieliapp.com/s/linux-toolchain \| tar -xJ -C ~/.jieli` | dieselbe Quelle, die Felucca nutzt; Ordner `~/.jieli/jieli-linux-toolchains-*/pi32v2/bin` |
 | fm1-nes (Treiber, Apache-2.0) | `git clone https://github.com/Keitark/fm1-nes ~/fm1-nes` | liefert Display-, Tasten- und Poti-Treiber |
 | AC79-SDK (Apache-2.0) | in `~/fm1-nes`: `python3 scripts/dependencies.py --fetch` | holt die von fm1-nes festgelegte SDK-Version nach `.deps/ac79-sdk` |
 | fm1-emulator | `curl -fL https://github.com/simonjohansson/fm1-emulator/releases/latest/download/fm1-emulator-linux-amd64.tar.gz \| tar -xz` | läuft unter WSL2 mit Fenster und Ton (WSLg) |
@@ -21,7 +21,7 @@ Unter Windows ohne WSL geht es auch, wenn du eine Windows-Version der JieLi-Tool
 ```bash
 cd ~/GrooveDeck-FM1
 export FM1_NES_DIR=~/fm1-nes
-export FM1_TOOLCHAIN_DIR=$(ls -d ~/.jieli/jieli-linux-toolchains-*/bin | tail -1)
+export FM1_TOOLCHAIN_DIR=$(ls -d ~/.jieli/jieli-linux-toolchains-*/pi32v2/bin | tail -1)
 python3 target/build.py --out build
 ```
 
