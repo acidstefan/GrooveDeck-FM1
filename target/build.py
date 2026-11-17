@@ -15,6 +15,7 @@ Aufruf:  python target/build.py [--out build] [--y-offset 0|40] [--lean]
 import argparse
 import os
 import re
+import struct
 import subprocess
 import sys
 from pathlib import Path
@@ -45,7 +46,66 @@ def tool(tc, names):
     raise SystemExit("Werkzeug nicht gefunden: %s (gesucht in %s)" % (" / ".join(names), ", ".join(map(str, dirs))))
 
 
-def emulator_patch(img, symbols=None):
+FCMP_SLOT = {0x0: 0x80, 0x1: 0x88, 0x2: 0x90, 0x3: 0x98, 0x8: 0xC0, 0x9: 0xC8,
+             0xA: 0xD0, 0xB: 0xD8, 0xC: 0xE0, 0xD: 0xE8}
+TRAMP_MARK = (0x52544447).to_bytes(4, "little")
+BASE = 0x02000120
+
+
+def long_goto(here, target):
+    """GOTO mit 22-Bit-Sprungweite (EAC0): Ziel = here + 4 + 2 * Weite."""
+    delta = (target - (here + 4)) // 2
+    if not -(1 << 21) <= delta < (1 << 21):
+        raise SystemExit("Emulator-Fassung: Sprung zu weit")
+    delta &= (1 << 22) - 1
+    return struct.pack("<HH", 0xEAC0 | (delta >> 16), delta & 0xFFFF)
+
+
+def fcmp_trampolines(d, disasm, funcs, tramp):
+    """Gleitkomma-Vergleich mit weitem Sprung: FF4c rL/rR/0x80 + 16-Bit-Weite (6 Byte). Der fm1-emulator kennt
+    davon nur die Ganzzahlform; die kurze Gleitkommaform (E800..EE80 | rR, rL/0x0800/Weite) kennt er, mit
+    derselben Bedingung (wie auf dem FM-1 gemessen). Jede Stelle wird 'goto T' + nop; in T steht:
+    IFF Bedingung rL, rR -> T+8 / goto Stelle+6 / T+8: goto Ziel. Die Objdump-Ausgabe des Herstellers markiert
+    genau diese Befehle als <unknown instruction> und liefert damit sichere Befehlsgrenzen."""
+    sites = []
+    for ln in disasm.splitlines():
+        m = re.match(r"\s*([0-9a-f]+):\s+(4[0-9a-f]) ff\s+<unknown instruction>", ln)
+        if not m:
+            continue
+        a = int(m.group(1), 16)
+        o = a - BASE
+        if o < 0 or o + 6 > len(d) or not any(s <= a and a + 6 <= s + n for s, n in funcs):
+            continue
+        op, x, disp = struct.unpack_from("<HHh", d, o)
+        if (op & 0xFFF0) != 0xFF40 or (op & 15) not in FCMP_SLOT or (x & 0xFF) != 0x80:
+            continue
+        sites.append((a, op, x, disp))
+    if not sites:
+        return 0
+    if tramp is None:
+        raise SystemExit("Emulator-Fassung: gd_emu_tramp fehlt in der Symbolliste")
+    o = tramp - BASE
+    o += d[o:o + 64].find(TRAMP_MARK) if TRAMP_MARK in d[o:o + 64] else 0
+    if d[o:o + 4] != TRAMP_MARK:
+        raise SystemExit("Emulator-Fassung: Platz fuer Sprungumwege (gd_emu_tramp) nicht gefunden")
+    room = 0
+    while d[o + room:o + room + 4] == TRAMP_MARK:
+        room += 4
+    if 12 * len(sites) > room:
+        raise SystemExit("Emulator-Fassung: zu viele Gleitkomma-Spruenge (%d) fuer gd_emu_tramp" % len(sites))
+    t = BASE + o
+    for a, op, x, disp in sites:
+        rl, rr = x >> 12, (x >> 8) & 15
+        to = t - BASE
+        d[to:to + 4] = struct.pack("<HH", 0xE000 | (FCMP_SLOT[op & 15] << 4) | rr, (rl << 12) | 0x0800 | 2)
+        d[to + 4:to + 8] = long_goto(t + 4, a + 6)
+        d[to + 8:to + 12] = long_goto(t + 8, a + 6 + disp * 2)
+        d[a - BASE:a - BASE + 6] = long_goto(a, t) + b"\x00\x00"
+        t += 12
+    return len(sites)
+
+
+def emulator_patch(img, symbols=None, disasm=None):
     """Fassung fuer den fm1-emulator: Der kennt 'clz' nicht als Haelfte eines Parallelbefehls
     (F180 xxxx + 16-Bit-Befehl). Solche Paare werden in 'Schwanz, dann clz' (E180, seriell) umgestellt.
     Nur wenn das gleichwertig ist: Der Schwanz ist ein Lade-/Speicherbefehl der Familie 0x6000 und
@@ -68,11 +128,13 @@ def emulator_patch(img, symbols=None):
     print("Emulator-Fassung: %d Parallelbefehl(e) umgestellt" % n)
     # Init-Tabelle: sdfile_init (sucht ein Flash-Dateisystem, das es bei roher .bin nicht gibt) -> gd_initcall_noop
     if symbols:
-        addr = {}
+        addr, funcs = {}, []
         for line in symbols.splitlines():
             parts = line.split()
             if len(parts) >= 3 and len(parts[0]) == 8:
                 addr[parts[-1]] = int(parts[0], 16)
+            if len(parts) == 4 and parts[2] in "tT" and parts[3] != "gd_emu_tramp":
+                funcs.append((int(parts[0], 16), int(parts[1], 16)))
         flag = addr.get("gd_emu_flag")
         fo = flag - 0x02000120 if flag is not None else -1
         if 0 <= fo <= len(d) - 4 and d[fo:fo + 4] == (0x47444530).to_bytes(4, "little"):
@@ -88,6 +150,17 @@ def emulator_patch(img, symbols=None):
                 print("Emulator-Fassung: sdfile_init in der Init-Tabelle ersetzt")
         else:
             print("Hinweis: __initcall_sdfile_init/gd_initcall_noop nicht in der Symbolliste")
+        # Register-Schnappschuss von display_test.c (liest u. a. GPIO-PC-Eingaenge, die der Emulator nicht
+        # nachbildet; Ergebnis wird ohnehin verworfen) -> sofort zurueck (rts)
+        snap = addr.get("snapshot")
+        if snap is not None and 0 <= snap - BASE < len(d):
+            d[snap - BASE:snap - BASE + 2] = b"\x80\x00"
+            print("Emulator-Fassung: Register-Schnappschuss der Display-Initialisierung abgeschaltet")
+        if disasm:
+            n = fcmp_trampolines(d, disasm, funcs, addr.get("gd_emu_tramp"))
+            print("Emulator-Fassung: %d Gleitkomma-Vergleich(e) mit weitem Sprung umgeleitet" % n)
+        else:
+            print("Hinweis: kein objdump - Gleitkomma-Vergleiche mit weitem Sprung bleiben (Emulator bricht dort ab)")
     return bytes(d)
 
 
@@ -95,6 +168,8 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--out", type=Path, default=ROOT / "build")
     ap.add_argument("--y-offset", type=int, default=0, help="Display-Zeilenversatz (0 oder 40)")
+    ap.add_argument("--keyscan-pio", action="store_true",
+                    help="Tastenmatrix wie fm1-nes-Standard per SPI2_BUF statt DMA (laeuft nicht im Emulator)")
     ap.add_argument("--lean", action="store_true", help="Spar-Einstellungen: Hall mono, Analyse halbe Rate, 4 Stimmen")
     a = ap.parse_args()
 
@@ -131,6 +206,10 @@ def main():
         # Display-Treiber von fm1-nes im synchronen Werks-Ablauf
         "-DFM1_NES_PLAYER=1", "-DFM1_TARGET_PI32V2=1",
         "-DFM1_LCD_STOCK_FILL=1", "-DFM1_LCD_STOCK_DMA=1", "-DFM1_LCD_STOCK_SEQUENCE=1"]
+    if not a.keyscan_pio:
+        # Tastenmatrix per SPI2-DMA wie die Original-Firmware (fm1-nes-Option); diese Betriebsart bildet der
+        # fm1-emulator nach, die Einzelbyte-Uebertragung ueber SPI2_BUF nicht.
+        defines += ["-DFM1_KEYSCAN_DMA2=1"]
     if a.lean:
         defines += ["-DGD_REVERB_STEREO=0", "-DGD_GOOD_FULLRATE=0", "-DGD_MAX_VOICES=4"]
     includes = ["-I" + str(x) for x in (ROOT / "core", HERE, nb, nes / "firmware/nes/include", sdk / "apps/common")]
@@ -146,7 +225,7 @@ def main():
     for src, name in ((sdk / "cpu/wl82/sdk_ld.c", "sdk.ld"), (sdk / "cpu/wl82/sdk_used_list.c", "sdk.used")):
         run([clang, *flags, *defines, *includes, "-D__LD__", "-E", "-P", src, "-o", out / name])
     used = out / "sdk.used"
-    used.write_text(used.read_text() + "\nmemory_init\n__wrap_boot_info_init\ngd_initcall_noop\ngd_emu_flag\ngd_alnk_direct_isr\ngd_audio_task\ngd_ui_task\ngd_alink_isr\nfm1_display_snapshot\n")
+    used.write_text(used.read_text() + "\nmemory_init\n__wrap_boot_info_init\ngd_initcall_noop\ngd_emu_flag\ngd_alnk_direct_isr\ngd_audio_task\ngd_ui_task\ngd_alink_isr\nfm1_display_snapshot\ngd_emu_tramp\n")
     ld = (out / "sdk.ld").read_text()
     ld = ld.replace("*(.data)", "*(.data .data.*)", 1).replace("*(.bss)", "*(.bss .bss.*)", 1)
     # wie fm1-nes: keine automatische Reparatur der Flash-Konfiguration beim Start
@@ -183,8 +262,17 @@ def main():
         if nmtool:
             (out / nm).write_text(run([nmtool[0], *args, elf]))
     syms = (out / "symbols.txt").read_text() if (out / "symbols.txt").exists() else None
+    disasm = None
+    try:
+        objdump = tool(tc, ["llvm-objdump", "objdump", "pi32v2-objdump"])
+        r = subprocess.run([str(objdump), "-d", str(elf)], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+        disasm = r.stdout if r.returncode == 0 else None
+        if disasm:
+            (out / "disasm.txt").write_text(disasm)
+    except SystemExit as e:
+        print("Hinweis:", e)
     emu = out / "groovedeck-emu.bin"
-    emu.write_bytes(emulator_patch(app.read_bytes(), syms))
+    emu.write_bytes(emulator_patch(app.read_bytes(), syms, disasm))
     print("fertig: %s (%d Byte)" % (app, app.stat().st_size))
     print("Emulator:  emulator %s" % emu)
 

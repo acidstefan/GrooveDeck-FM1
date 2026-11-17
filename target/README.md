@@ -37,7 +37,14 @@ Optionen:
 ./emulator build/groovedeck-emu.bin
 ```
 
-Die Emulator-Fassung unterscheidet sich nur darin, dass Parallelbefehle mit `clz` (vom Compiler im Betriebssystem-Kern erzeugt) nacheinander ausgeführt werden. Diese Form kennt der Emulator noch nicht.
+Die Emulator-Fassung (`groovedeck-emu.bin`) entsteht aus derselben Firmware durch einige gezielte Änderungen am fertigen Bild. Sie betreffen nur Stellen, die der Emulator nicht nachbildet:
+
+- Parallelbefehle mit `clz` (vom Compiler im Betriebssystem-Kern erzeugt) werden nacheinander ausgeführt.
+- Gleitkomma-Vergleiche mit weitem Sprung werden über einen kurzen Umweg in `gd_emu_tramp` geleitet. Dort steht die kurze Form desselben Vergleichs. Dafür braucht `build.py` das `objdump` der Toolchain und schreibt nebenbei `build/disasm.txt`.
+- Der Audiotreiber spricht ALNK0 direkt an.
+- `sdfile_init` und der Register-Schnappschuss der Display-Initialisierung werden übersprungen.
+
+Die Tastenmatrix läuft in beiden Fassungen per SPI2-DMA, so wie in der Original-Firmware. Mit `--keyscan-pio` lässt sich auf den fm1-nes-Standard umschalten, der im Emulator aber nicht läuft.
 
 Tastatur im Emulator: Z/C spielen Noten, X/V Oktave, P/O ENV/LFO, H HOME; die übrigen Bedienelemente mit der Maus (Klick auf Buttons, Ziehen/Scrollen an den Drehgebern). Zum Prüfen ohne Fenster: `./emulator --headless build/groovedeck-emu.bin`.
 

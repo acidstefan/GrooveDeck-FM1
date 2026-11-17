@@ -49,3 +49,13 @@ int gd_initcall_noop(void)
 {
     return 0;
 }
+
+/* Platz fuer Sprungumwege, nur in der Emulator-Fassung genutzt (build.py, fcmp_trampolines): Gleitkomma-
+   Vergleiche mit weitem Sprung (FF4x .. 0x80) kennt der fm1-emulator nicht, die kurze Form schon. build.py
+   ersetzt jede solche Stelle durch einen Sprung hierher. Liegt bewusst im Programmbereich (.text), denn der
+   SDK-Startcode begrenzt den erlaubten PC-Bereich darauf. Auf dem Geraet wird diese Funktion nie aufgerufen. */
+__attribute__((noinline, used, aligned(4)))
+void gd_emu_tramp(void)
+{
+    __asm__ volatile(".balign 4\n\t.fill 768, 4, 0x52544447");
+}

@@ -186,8 +186,8 @@ static void process_arp(gd_seq *s, float b0, float b1)
             const float g = gd_arp_grid_beats(A.grid);
             long k, k0, k1;
             gd_arp_build_pool(&A, R->held, R->nHeld, &pool, A.style != 5);
-            k0 = (long)floorf(b0 / g) - 1;
-            k1 = (long)ceilf(b1 / g) + 1;
+            k0 = gd_floorl(b0 / g) - 1;
+            k1 = gd_ceill(b1 / g) + 1;
             for (k = k0; k <= k1; ++k) {
                 const float t = (float)k * g + ((k & 1) ? A.shuffle * g * 0.5f : 0.0f);
                 gd_arp_out o;
@@ -240,7 +240,7 @@ void gd_seq_tick(gd_seq *s, float b0, float b1)
         long st;
         if (!s->wasPlaying) s->nPending = 0;
         due_offs(s, b1);
-        for (st = (long)ceilf(b0 * 4.0f - 1e-6f); (float)st / 4.0f < b1; ++st) {
+        for (st = gd_ceill(b0 * 4.0f - 1e-6f); (float)st / 4.0f < b1; ++st) {
             const int pl = clampi(s->pat.patLen, 1, GD_MAX_STEPS);
             const int step = (int)(((st % pl) + pl) % pl);
             const float stepBeat = (float)st / 4.0f;

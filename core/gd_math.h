@@ -15,6 +15,10 @@ static inline float gd_maxf(float a, float b) { return a > b ? a : b; }
 static inline float gd_absf(float x) { return x < 0.0f ? -x : x; }
 static inline int gd_roundi(float x) { return x >= 0.0f ? (int)(x + 0.5f) : -(int)(0.5f - x); }
 static inline float gd_floorf(float x) { int i = (int)x; return (float)(x < (float)i ? i - 1 : i); }
+/* Ganzzahliges floor/ceil ueber Abschneiden: (long)floorf() erzeugt sonst einen FPU-Rundungsbefehl
+   (E53F x2F/x3F), den der fm1-emulator nicht kennt. */
+static inline long gd_floorl(float x) { long i = (long)x; return x < (float)i ? i - 1 : i; }
+static inline long gd_ceill(float x) { long i = (long)x; return x > (float)i ? i + 1 : i; }
 
 /* 2^x: Rundung auf die naechste ganze Zahl, Rest f in [-0.5, 0.5] per Taylorreihe (Grad 6, Fehler < 2e-7).
    Exakt 1 bei x = 0 - wichtig fuer Abklingkoeffizienten nahe 1. */
