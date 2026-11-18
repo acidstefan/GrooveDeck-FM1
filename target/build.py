@@ -244,7 +244,7 @@ def main():
     for src, name in ((sdk / "cpu/wl82/sdk_ld.c", "sdk.ld"), (sdk / "cpu/wl82/sdk_used_list.c", "sdk.used")):
         run([clang, *flags, *defines, *includes, "-D__LD__", "-E", "-P", src, "-o", out / name])
     used = out / "sdk.used"
-    used.write_text(used.read_text() + "\nmemory_init\n__wrap_boot_info_init\ngd_initcall_noop\ngd_emu_flag\ngd_alnk_direct_isr\ngd_audio_task\ngd_master_task\ngd_ui_task\ngd_alink_isr\nfm1_display_snapshot\ngd_emu_tramp\ngd_flash_diag\n")
+    used.write_text(used.read_text() + "\nmemory_init\n__wrap_boot_info_init\ngd_initcall_noop\ngd_emu_flag\ngd_alnk_direct_isr\ngd_audio_task\ngd_master_task\ngd_ui_task\ngd_alink_isr\nfm1_display_snapshot\ngd_emu_tramp\ngd_flash_diag\ngd_battery_mv\n")
     ld = (out / "sdk.ld").read_text()
     ld = ld.replace("*(.data)", "*(.data .data.*)", 1).replace("*(.bss)", "*(.bss .bss.*)", 1)
     # wie fm1-nes: keine automatische Reparatur der Flash-Konfiguration beim Start

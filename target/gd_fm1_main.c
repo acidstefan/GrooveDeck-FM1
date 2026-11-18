@@ -3,7 +3,7 @@
  * STATUS: ENTWURF, NOCH NICHT KOMPILIERT. Die Hardware-Treiber kommen aus fm1-nes (Apache-2.0):
  *   - Display: fm1_display_test_init / fm1_display_write (nes/boot/display_test.c, Werks-Initialisierung)
  *   - Tastenmatrix: fm1_wl82_keyscan_* (nes/src/fm1_wl82_keyscan.c), Rohzeilen inkl. Drehgeber
- *   - MASTER-Poti: fm1_volume_* (nes/src/fm1_volume.c, SAR-ADC Kanal 4)
+ *   - MASTER-Poti: Start mit fm1_volume_start (nes/src/fm1_volume.c), danach eigenes ADC-Raster (Kanal 4 + Akku)
  *   - Audio: SDK-IIS (ALINK0, Kanal 3, 24 Bit in 32-Bit-Worten, 64 Stereo-Frames je DMA-Haelfte) wie fm1_wl82.c
  * Alles Musikalische steckt in core/ (hardwareunabhaengig, am PC getestet).
  *
@@ -428,6 +428,89 @@ static void gd_volume_start(fm1_volume *s)
     GD_RD(0x13100u) = 0xf44eu; GD_CHG(0x13100u, 0, 0x10); GD_CHG(0x13100u, 0, 0x40);
 }
 
+/* ------------------------------------------------------------------ SAR-ADC: MASTER-Poti und Akku
+   Nach gd_volume_start uebernimmt dieser Teil das ADC (statt fm1_volume_tick): meist Kanal 4 (MASTER, Entprellung
+   wie fm1-nes/Werk: +/-6 Totband, 10 Abweichungen in Folge), einmal je Sekunde zusaetzlich Kanal 15 zweimal:
+   ohne Testpfad = interne Referenz (VBG), mit Testpfad TEST_TO_ADC_S 4 = Akkuspannung/4. So misst es auch die
+   Werks-Firmware (Werte am FM-1 gemessen: ca. 218 bzw. 246). Akku = raw_vbat * 4 * 800 mV / raw_vbg;
+   0 % bei 3,40 V, 100 % bei 4,15 V (Annahme, am Geraet noch zu pruefen). Ladeerkennung: noch unbekannt. */
+#define ADC_REG 0x13100u
+#define ANA_WLA 0x11900u
+enum { ADC_MASTER = 0, ADC_VBG, ADC_VBAT };
+static struct {
+    uint8_t phase, waiting, debounce, running;
+    uint16_t accepted, vbg;
+    uint32_t ticks;
+    int32_t bat_mv;
+} adc;
+volatile int32_t gd_battery_mv;
+
+static void adc_launch(unsigned ch)
+{
+    GD_RD(ADC_REG) = 0xf00eu | 0x40u | (ch << 8);
+    GD_CHG(ADC_REG, 0, 0x10u);
+    GD_CHG(ADC_REG, 0, 0x40u);
+}
+
+static void adc_start(void)
+{
+    gd_volume_start(&volume);          /* Pins, Analog-Gates und erste Wandlung auf Kanal 4 */
+    memset(&adc, 0, sizeof adc);
+    adc.running = volume.running;
+    adc.accepted = 0xffffu;
+}
+
+static void adc_tick(void)   /* alle 2 ms */
+{
+    unsigned raw;
+    if (!adc.running) return;
+    if (!(GD_RD(ADC_REG) & 0x80u)) {
+        if (++adc.waiting >= 10u) {    /* 20 ms ohne Ergebnis: neu starten */
+            adc.waiting = 0;
+            GD_RD(ADC_REG) = 0x40u; GD_RD(ADC_REG) = 0;
+            GD_CHG(ANA_WLA, 1u << 14, 0);
+            adc.phase = ADC_MASTER;
+            adc_launch(4);
+        }
+        return;
+    }
+    adc.waiting = 0;
+    raw = GD_RD(ADC_REG + 4) & 0x3ffu;
+    GD_RD(ADC_REG) = 0x40u; GD_RD(ADC_REG) = 0;     /* quittieren und aus; erst danach Leitweg aendern */
+    switch (adc.phase) {
+        case ADC_MASTER: {
+            const int delta = (int)raw - (int)adc.accepted;
+            if (adc.accepted == 0xffffu) { adc.accepted = (uint16_t)raw; gd_input_master(&input, (int)raw, &app); }
+            else if (delta >= -6 && delta <= 6) adc.debounce = 0;
+            else if (++adc.debounce >= 10u) {
+                adc.debounce = 0;
+                adc.accepted = (uint16_t)raw;
+                gd_input_master(&input, (int)raw, &app);
+            }
+            if (++adc.ticks >= 500u) { adc.ticks = 0; adc.phase = ADC_VBG; adc_launch(15); return; }
+            adc_launch(4);
+            return;
+        }
+        case ADC_VBG:
+            adc.vbg = (uint16_t)raw;
+            GD_CHG(ANA_WLA, 0, 1u << 14);              /* Testpfad an: Akkuspannung/4 */
+            adc.phase = ADC_VBAT;
+            adc_launch(15);
+            return;
+        default:
+            GD_CHG(ANA_WLA, 1u << 14, 0);
+            if (adc.vbg >= 100u && raw > 0u) {
+                const int32_t mv = (int32_t)(raw * 4u * 800u / adc.vbg);
+                adc.bat_mv = adc.bat_mv ? (adc.bat_mv * 7 + mv) / 8 : mv;   /* glaetten */
+                gd_battery_mv = adc.bat_mv;
+                gd_app_set_battery(&app, gd_clampi((int)((adc.bat_mv - 3400) * 100 / (4150 - 3400)), 0, 100), 0);
+            }
+            adc.phase = ADC_MASTER;
+            adc_launch(4);
+            return;
+    }
+}
+
 /* ------------------------------------------------------------------ Tastenmatrix + LEDs
    Abtastung wie fm1_wl82_keyscan_raw (fm1-nes, Apache-2.0, DMA-Betriebsart), zusaetzlich werden nach jeder
    Latch-Flanke die vier LED-Leitungen fuer die jetzt gewaehlte Spalte gesetzt (PA9, PA10, PH6, PH9 = Zeilen 1-4,
@@ -508,7 +591,7 @@ static void gd_ui_task(void *arg)
     (void)arg;
     fm1_display_test_init();
     scan_ok = fm1_wl82_keyscan_start(&scanner, 0, now_us) == 0;
-    gd_volume_start(&volume);
+    adc_start();
     for (;;) {
         const uint32_t now = timer_get_ms();
         /* Abtasten alle 2 ms; im Emulator alle 8 ms, denn dort dauert ein Durchgang (bewusst gedehnt) ca. 0,9 ms
@@ -525,8 +608,7 @@ static void gd_ui_task(void *arg)
         }
         if (now - last_vol >= 2u) {
             last_vol = now;
-            fm1_volume_tick(&volume);
-            if (volume.valid) gd_input_master(&input, volume.accepted, &app);
+            adc_tick();
         }
         gd_app_tick(&app, (int)(now - last_tick));
         last_tick = now;
