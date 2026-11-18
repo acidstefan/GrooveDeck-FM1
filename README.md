@@ -21,6 +21,11 @@ Eigener Code, ohne GPL-Abhängigkeit. Die Hardware-Treiber kommen aus [fm1-nes](
 - Alle 440 Presets laufen ohne Übersteuerung, ohne NaN und ohne Stille.
 - **Rechenzeit:** schwerstes Preset ca. 190 Mio. x86-Befehle je Sekunde Audio, davon ca. 100 Mio. Stimmen und ca. 75 Mio. FX/Master. Ein Kern des FM-1 schafft im Emulator-Modell 125 Mio. Befehle/s. Deshalb ist die Engine in zwei Hälften teilbar (zwei Kerne), und es gibt Spar-Schalter (`--lean`). Ob es auf einem Kern reicht, zeigt erst der Emulator.
 
+## Fassungen für das Gerät
+
+- **`fm1open/`**: GrooveDeck auf **FM1 Open**, dem offiziellen Entwicklungspaket von M-VAVE. USB-Update, MIDI (Klinke/USB/Bluetooth), Display, Flash usw. kommen aus M-VAVEs Systembibliothek; Bau unter Windows. Lizenz dieser Fassung: GPLv3. Anleitung: [fm1open/README.md](fm1open/README.md)
+- **`target/`**: eigenständige Fassung auf dem JieLi-AC79-SDK und fm1-nes, zum Testen im fm1-emulator (Linux/WSL).
+
 ## PC-Werkzeuge bauen (Windows, Linux, macOS)
 
 ```

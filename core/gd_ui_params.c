@@ -1,7 +1,7 @@
 /* GrooveDeck FM-1 - Reglerseiten und Werteanzeige. */
 #include "gd_ui_params.h"
 #include "gd_math.h"
-#include <stdio.h>
+#include "gd_fmt.h"
 #include <string.h>
 
 static const char *const N_FTYPE[] = { "LPF", "HPF", "BPF", "BPF+" };
@@ -102,20 +102,20 @@ void gd_param_format(const gd_app *a, const gd_pdesc *d, char *buf, int cap)
     const float v = gd_param_value(a, d);
     const int iv = gd_roundi(v);
     switch (d->kind) {
-        case PK_CONT: snprintf(buf, (size_t)cap, "%d", gd_roundi(v * 100.0f)); break;
-        case PK_TEMPO: snprintf(buf, (size_t)cap, "%.1f", (double)v); break;
-        case PK_INT: snprintf(buf, (size_t)cap, "%d", d->field == PF_ARP_OCT ? iv + 1 : iv); break;
+        case PK_CONT: gd_snprintf(buf, (size_t)cap, "%d", gd_roundi(v * 100.0f)); break;
+        case PK_TEMPO: gd_snprintf(buf, (size_t)cap, "%.1f", (double)v); break;
+        case PK_INT: gd_snprintf(buf, (size_t)cap, "%d", d->field == PF_ARP_OCT ? iv + 1 : iv); break;
         case PK_CHOICE:
         case PK_SWITCH:
-            snprintf(buf, (size_t)cap, "%s", d->names ? d->names[gd_clampi(iv, (int)d->lo, (int)d->hi)] : "?");
+            gd_snprintf(buf, (size_t)cap, "%s", d->names ? d->names[gd_clampi(iv, (int)d->lo, (int)d->hi)] : "?");
             break;
-        case PK_STYLE: snprintf(buf, (size_t)cap, "%s", gd_arp_style_name(iv)); break;
-        case PK_FORM: snprintf(buf, (size_t)cap, "%s", gd_arp_form_name(iv)); break;
-        case PK_GRID: snprintf(buf, (size_t)cap, "%s", gd_arp_grid_name(iv)); break;
-        case PK_VOICING: snprintf(buf, (size_t)cap, "%s", gd_arp_voicing_name(iv)); break;
+        case PK_STYLE: gd_snprintf(buf, (size_t)cap, "%s", gd_arp_style_name(iv)); break;
+        case PK_FORM: gd_snprintf(buf, (size_t)cap, "%s", gd_arp_form_name(iv)); break;
+        case PK_GRID: gd_snprintf(buf, (size_t)cap, "%s", gd_arp_grid_name(iv)); break;
+        case PK_VOICING: gd_snprintf(buf, (size_t)cap, "%s", gd_arp_voicing_name(iv)); break;
         case PK_CHAN: {
             const int idx = iv >= 0 ? gd_chan_preset_nth(a->part, iv) : -1;
-            snprintf(buf, (size_t)cap, "%s", idx >= 0 ? gd_chan_presets[idx].name : "--");
+            gd_snprintf(buf, (size_t)cap, "%s", idx >= 0 ? gd_chan_presets[idx].name : "--");
             break;
         }
         default: buf[0] = 0; break;

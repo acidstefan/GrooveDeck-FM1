@@ -103,6 +103,8 @@ void gd_midi_byte(gd_midi *m, gd_app *a, uint8_t byte);
 int gd_app_midi_out_read(gd_app *a, uint8_t *dst, int cap);
 /* Akkustand 0..100 (-1 = unbekannt), laedt = 1 waehrend USB-Strom anliegt */
 void gd_app_set_battery(gd_app *a, int percent, int charging);
+/* Kurze Meldung im Display (ca. 1,5 s) */
+void gd_app_message(gd_app *a, const char *m);
 /* LED-Helligkeiten 0..255 fuer den aktuellen Zustand (Bedien-Task, ca. alle 10 ms).
    keys[27] = Tasten-LEDs, btn[GB_COUNT] = Button-LEDs (bei PLAY: weisse STOP-LED), playGreen = gruene PLAY-LED */
 void gd_leds_compute(const gd_app *a, uint32_t nowMs, uint8_t keys[GD_KEYS], uint8_t btn[GB_COUNT], uint8_t *playGreen);

@@ -1,9 +1,9 @@
 /* GrooveDeck FM-1 - Bedienlogik: Seiten, Regler, Tastatur, Step-Eingabe, Live-Aufnahme, Speichern. */
 #include "gd_app.h"
+#include "gd_fmt.h"
 #include "gd_ui_params.h"
 #include "gd_math.h"
 #include <string.h>
-#include <stdio.h>
 
 /* ------------------------------------------------------------ Ereignisse */
 static void post(gd_app *a, int type, int x, int y)
@@ -46,7 +46,7 @@ static void load_preset(gd_app *a, int idx)
     memset(a->chanSel, 0xff, sizeof a->chanSel);
     a->stepPage = 0;
     a->dirty = 0;
-    snprintf(m, sizeof m, "%03d %s", idx + 1, gd_presets[idx].name);
+    gd_snprintf(m, sizeof m, "%03d %s", idx + 1, gd_presets[idx].name);
     message(a, m);
 }
 
@@ -65,6 +65,8 @@ void gd_app_init(gd_app *a, float sampleRate)
     load_preset(a, 0);
     a->msgMs = 0;
 }
+
+void gd_app_message(gd_app *a, const char *m) { message(a, m); }
 
 int gd_app_load_user(gd_app *a, const uint8_t *data, int len)
 {
@@ -214,7 +216,7 @@ static void step_key(gd_app *a, int key)
             char m[32];
             a->seq.muteMask ^= (uint16_t)(1u << p);
             a->octMuteUsed = 1;
-            snprintf(m, sizeof m, "%s %s", gd_part_short(p), ((a->seq.muteMask >> p) & 1u) ? "stumm" : "an");
+            gd_snprintf(m, sizeof m, "%s %s", gd_part_short(p), ((a->seq.muteMask >> p) & 1u) ? "stumm" : "an");
             message(a, m);
         } else {
             a->part = p;
@@ -476,7 +478,7 @@ static void encoder_event(gd_app *a, int enc, int delta)
         if (sel < 0) sel += gd_num_presets;
         a->presetSel = sel;
         a->presetTurnMs = a->audioMs;
-        snprintf(m, sizeof m, "> %03d %s", sel + 1, gd_presets[sel].name);
+        gd_snprintf(m, sizeof m, "> %03d %s", sel + 1, gd_presets[sel].name);
         message(a, m);
         return;
     }
@@ -484,7 +486,7 @@ static void encoder_event(gd_app *a, int enc, int delta)
         char m[32];
         a->transpose = gd_clampi(a->transpose + delta, -12, 12);
         a->comboUsed[GB_OCTDN] = a->comboUsed[GB_OCTUP] = 1;
-        snprintf(m, sizeof m, "Transpose %+d", a->transpose);
+        gd_snprintf(m, sizeof m, "Transpose %+d", a->transpose);
         message(a, m);
         return;
     }

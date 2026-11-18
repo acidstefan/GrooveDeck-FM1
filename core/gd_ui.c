@@ -1,9 +1,9 @@
 /* GrooveDeck FM-1 - Bildschirm 240 x 240 (RGB565). Zeichnet in einen Streifen (gd_canvas), damit auf dem FM-1
    kein voller Bildspeicher (115 KB) noetig ist: die Plattform ruft gd_ui_draw fuer jeden Streifen auf. */
 #include "gd_app.h"
+#include "gd_fmt.h"
 #include "gd_ui_params.h"
 #include "gd_math.h"
-#include <stdio.h>
 #include <string.h>
 
 extern const uint8_t gd_font5x7[95][5];
@@ -74,7 +74,7 @@ static void note_name(int n, char *b, int cap)
 {
     static const char *nn[12] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
     n = gd_clampi(n, 0, 127);
-    snprintf(b, (size_t)cap, "%s%d", nn[n % 12], n / 12 - 1);
+    gd_snprintf(b, (size_t)cap, "%s%d", nn[n % 12], n / 12 - 1);
 }
 
 /* ------------------------------------------------------------- Bereiche */
@@ -83,7 +83,7 @@ static void draw_header(const gd_app *a, gd_canvas *c)
     char b[48];
     const gd_preset_entry *pe = &gd_presets[a->preset];
     fill(c, 0, 0, 240, 18, C_PANEL);
-    snprintf(b, sizeof b, "%03d", a->preset + 1);
+    gd_snprintf(b, sizeof b, "%03d", a->preset + 1);
     text(c, 4, 5, b, C_ACC, 1);
     {
         char nm[26];
@@ -103,9 +103,9 @@ static void draw_header(const gd_app *a, gd_canvas *c)
         fill(c, 192, 5, 1, 8, C_DIM); fill(c, 205, 5, 1, 8, C_DIM); fill(c, 206, 7, 2, 4, C_DIM);
         fill(c, 194, 7, (a->battery * 10 + 50) / 100, 4, col);
     }
-    snprintf(b, sizeof b, "%s / %s", gd_genre_names[pe->genre], gd_sub_names[pe->genre][pe->sub]);
+    gd_snprintf(b, sizeof b, "%s / %s", gd_genre_names[pe->genre], gd_sub_names[pe->genre][pe->sub]);
     text(c, 4, 22, b, C_DIM, 1);
-    snprintf(b, sizeof b, "%s%.1f", a->extClock ? "EXT " : "", (double)a->eng.g[GP_TEMPO]);
+    gd_snprintf(b, sizeof b, "%s%.1f", a->extClock ? "EXT " : "", (double)a->eng.g[GP_TEMPO]);
     text(c, 236 - text_w(b, 1), 22, b, a->extClock ? C_PLAY : C_TEXT, 1);
 }
 
@@ -148,20 +148,20 @@ static void draw_steps(const gd_app *a, gd_canvas *c)
             nn[2] = 0; /* nur Notenname */
             if (nn[1] != '#') nn[1] = 0;
             text_c(c, x + 6, 86, nn, C_TEXT, 1);
-            snprintf(nn, sizeof nn, "%d", note / 12 - 1);
+            gd_snprintf(nn, sizeof nn, "%d", note / 12 - 1);
             text_c(c, x + 6, 96, nn, C_DIM, 1);
         }
     }
-    snprintf(b, sizeof b, "%s %d-%d/%d", a->stepMode ? "STEP" : "PLAY", base + 1, base + 16 < pl ? base + 16 : pl, pl);
+    gd_snprintf(b, sizeof b, "%s %d-%d/%d", a->stepMode ? "STEP" : "PLAY", base + 1, base + 16 < pl ? base + 16 : pl, pl);
     text(c, 4, 106, b, a->stepMode ? C_ACC : C_PLAY, 1);
     if (!a->stepMode && (a->octave || a->transpose)) {
-        snprintf(b, sizeof b, "OKT %+d TR %+d", a->octave, a->transpose);
+        gd_snprintf(b, sizeof b, "OKT %+d TR %+d", a->octave, a->transpose);
         text(c, 100, 106, b, C_TEXT, 1);
     }
     if (kbd) {
         char nn[8];
         note_name(a->lastNote[part - GD_KBD1], nn, sizeof nn);
-        snprintf(b, sizeof b, "NOTE %s", nn);
+        gd_snprintf(b, sizeof b, "NOTE %s", nn);
         text(c, 236 - text_w(b, 1), 106, b, C_DIM, 1);
     }
 }
@@ -172,7 +172,7 @@ static void draw_knobs(const gd_app *a, gd_canvas *c)
     int k;
     if (118 >= c->y0 + c->h) return;
     fill(c, 0, 118, 240, 14, C_PANEL);
-    snprintf(b, sizeof b, "%s %c  -  %s", gd_page_name(a->page), a->sub ? 'B' : 'A', gd_part_short(a->part));
+    gd_snprintf(b, sizeof b, "%s %c  -  %s", gd_page_name(a->page), a->sub ? 'B' : 'A', gd_part_short(a->part));
     text(c, 4, 122, b, C_ACC, 1);
     {   /* Soundgoodizer-Anzeige: 12 Baender */
         int i;
@@ -185,7 +185,7 @@ static void draw_knobs(const gd_app *a, gd_canvas *c)
         const gd_pdesc *d = gd_page_param(a->page, a->sub, a->part, k);
         const int x = (k & 1) * 120, y = 136 + (k >> 1) * 52;
         fill(c, x + 2, y, 116, 50, C_PANEL);
-        snprintf(b, sizeof b, "%d", k + 1);
+        gd_snprintf(b, sizeof b, "%d", k + 1);
         text(c, x + 6, y + 4, b, C_ACC, 1);
         if (!d) { text(c, x + 16, y + 4, "-", C_LINE, 1); continue; }
         text(c, x + 16, y + 4, d->label, C_DIM, 1);
