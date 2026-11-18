@@ -154,6 +154,18 @@ static int audio_start(void)
     return 0;
 }
 
+/* Weiche Begrenzung am Ausgang: bis 0,8 linear, darueber sanft gegen 1,0 statt hartem Abschneiden
+   (MASTER ganz aufgedreht = +6 dB, laute Presets wuerden sonst kratzig uebersteuern). */
+static inline float soft_clip(float x)
+{
+    const float ax = gd_absf(x);
+    if (ax <= 0.8f) return x;
+    {
+        const float y = 0.8f + 0.2f * gd_tanh((ax - 0.8f) * 5.0f);
+        return x < 0.0f ? -y : y;
+    }
+}
+
 __attribute__((noinline, used))
 static void gd_audio_task(void *arg)
 {
@@ -178,8 +190,8 @@ static void gd_audio_task(void *arg)
                         sl = 0.5f * ((k ? l[k - 1] : pl) + l[k]);
                         sr = 0.5f * ((k ? r[k - 1] : pr) + r[k]);
                     }
-                    dst[2 * i] = (int32_t)(gd_clampf(sl, -1.0f, 1.0f) * full);
-                    dst[2 * i + 1] = (int32_t)(gd_clampf(sr, -1.0f, 1.0f) * full);
+                    dst[2 * i] = (int32_t)(gd_clampf(soft_clip(sl), -1.0f, 1.0f) * full);
+                    dst[2 * i + 1] = (int32_t)(gd_clampf(soft_clip(sr), -1.0f, 1.0f) * full);
                 }
                 pl = l[GD_ENGINE_FRAMES - 1];
                 pr = r[GD_ENGINE_FRAMES - 1];
