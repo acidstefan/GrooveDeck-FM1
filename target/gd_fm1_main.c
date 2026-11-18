@@ -503,7 +503,7 @@ static void gd_ui_task(void *arg)
 {
     uint8_t rows[FM1_STOCK_SCAN_ROWS];
     unsigned drawn = ~0u;
-    uint32_t last_draw = 0, last_tick = timer_get_ms(), last_vol = 0;
+    uint32_t last_draw = 0, last_tick = timer_get_ms(), last_vol = 0, last_scan = 0;
     int scan_ok, step = -2;
     (void)arg;
     fm1_display_test_init();
@@ -511,8 +511,11 @@ static void gd_ui_task(void *arg)
     gd_volume_start(&volume);
     for (;;) {
         const uint32_t now = timer_get_ms();
-        if (scan_ok) {
+        /* Abtasten alle 2 ms; im Emulator alle 8 ms, denn dort dauert ein Durchgang (bewusst gedehnt) ca. 0,9 ms
+           aktives Warten statt 0,09 ms */
+        if (scan_ok && now - last_scan >= (GD_EMU ? 8u : 2u)) {
             uint8_t keys[GD_KEYS], btn[GB_COUNT], green;
+            last_scan = now;
             gd_leds_compute(&app, now, keys, btn, &green);
             gd_input_led_grid(keys, btn, green, led_grid);
             /* Zeitueberschreitung (z. B. weil die Audio-Tasks den Bedien-Task verdraengt haben): diese Abtastung
