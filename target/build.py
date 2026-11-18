@@ -181,7 +181,7 @@ def main():
     ap.add_argument("--single-core", action="store_true",
                     help="Klangberechnung in einem Task (ohne Aufteilung auf zwei Kerne)")
     ap.add_argument("--emu-light", action="store_true",
-                    help="nur fuer langsame PCs im Emulator: wie --lean, Engine zusaetzlich mit halber Abtastrate (dumpfer)")
+                    help="nur fuer langsame PCs im Emulator: wie --lean, ein Kern, Engine mit halber Abtastrate (dumpfer)")
     a = ap.parse_args()
 
     nes = Path(os.environ.get("FM1_NES_DIR", "")).resolve()
@@ -223,7 +223,8 @@ def main():
         defines += ["-DFM1_KEYSCAN_DMA2=1"]
     if a.lean or a.emu_light:
         defines += ["-DGD_REVERB_STEREO=0", "-DGD_GOOD_FULLRATE=0", "-DGD_MAX_VOICES=4"]
-    if a.single_core:
+    if a.single_core or a.emu_light:
+        # im Emulator rechnet ein PC-Kern beide FM-1-Kerne: die Aufteilung kostet dort nur zusaetzlich
         defines += ["-DGD_DUAL_CORE=0"]
     if a.flash_save:
         defines += ["-DGD_FLASH_SAVE=1"]
