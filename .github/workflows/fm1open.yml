@@ -26,19 +26,32 @@ jobs:
           curl.exe --fail --location --retry 5 --retry-delay 10 --output $exe https://jl-update.oss-cn-shenzhen.aliyuncs.com/2.5.3.exe
           Write-Host ("Installer: {0:N0} Byte, SHA256 {1}" -f (Get-Item $exe).Length, (Get-FileHash $exe).Hash)
           $out = "$env:RUNNER_TEMP\jl"
-          & 7z l $exe | Select-Object -First 40
-          & 7z x $exe "-o$out" -y | Select-Object -Last 5
-          $clang = Get-ChildItem $out -Filter clang.exe -Recurse -ErrorAction SilentlyContinue |
-            Where-Object { $_.FullName -match '\\pi32\\bin\\clang\.exe$' } | Select-Object -First 1
-          if (!$clang) {
-            # verschachtelte Archive (z. B. pi32.7z / .zip) ebenfalls auspacken
-            Get-ChildItem $out -Recurse -Include *.7z,*.zip -ErrorAction SilentlyContinue | ForEach-Object {
-              Write-Host "Entpacke $($_.FullName)"; & 7z x $_.FullName "-o$($_.DirectoryName)" -y | Out-Null }
-            $clang = Get-ChildItem $out -Filter clang.exe -Recurse -ErrorAction SilentlyContinue |
-              Where-Object { $_.FullName -match '\\pi32\\bin\\clang\.exe$' } | Select-Object -First 1
+          # Installer-Typ anhand bekannter Kennungen bestimmen
+          $text = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($exe))
+          foreach ($m in @('Inno Setup','Nullsoft','7zS.sfx','!@InstallEnd@!','QtIFW','Advanced Installer','InstallShield','Setup Factory','WiX','PK' + [char]3 + [char]4,'7z' + [char]0xBC + [char]0xAF)) {
+            $i = $text.IndexOf($m); if ($i -ge 0) { Write-Host ("Kennung '{0}' bei {1:N0}" -f ($m -replace '[^\x20-\x7e]','?'), $i) }
+          }
+          function Find-Clang { Get-ChildItem $out -Filter clang.exe -Recurse -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match '\\pi32\\bin\\clang\.exe$' } | Select-Object -First 1 }
+          $clang = $null
+          if ($text.Contains('Inno Setup')) {
+            choco install innoextract -y --no-progress | Out-Null
+            innoextract --silent --output-dir $out $exe
+            $clang = Find-Clang
           }
           if (!$clang) {
-            Get-ChildItem $out -Recurse -Depth 3 -ErrorAction SilentlyContinue | Select-Object -First 80 FullName
+            & 7z x $exe "-o$out" -y | Select-Object -Last 3
+            # eingebettete Archive (Ressourcen ohne Endung, .7z, .zip) Stufe fuer Stufe auspacken
+            for ($round = 0; $round -lt 3 -and !$clang; ++$round) {
+              Get-ChildItem $out -Recurse -File | Where-Object { $_.Length -gt 1MB -and $_.Extension -notin @('.exe','.dll') -or $_.Extension -in @('.7z','.zip') } | ForEach-Object {
+                $dest = $_.FullName + '_x'
+                if (!(Test-Path $dest)) { & 7z x $_.FullName "-o$dest" -y 2>&1 | Out-Null; Write-Host "versucht: $($_.FullName) ($($_.Length))" }
+              }
+              $clang = Find-Clang
+            }
+          }
+          if (!$clang) {
+            Get-ChildItem $out -Recurse -File -ErrorAction SilentlyContinue | Sort-Object Length -Descending | Select-Object -First 40 Length, FullName | Format-Table -AutoSize | Out-String -Width 300
             throw 'pi32\bin\clang.exe nicht im Installer gefunden'
           }
           $pi32 = Split-Path (Split-Path $clang.FullName)
