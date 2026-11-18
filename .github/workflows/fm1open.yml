@@ -72,6 +72,18 @@ jobs:
           powershell -NoProfile -ExecutionPolicy Bypass -File sdk\Build.ps1 -FirmwareOnly -Toolchain $env:FM1_PI32_TOOLCHAIN 2>&1 | Tee-Object -FilePath build-log.txt
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+      - name: Groessenbericht
+        if: always()
+        shell: pwsh
+        run: |
+          $elf = "fm1_open\build\dx7\sdk.elf"
+          if (!(Test-Path $elf)) { Write-Host "kein sdk.elf"; exit 0 }
+          $nm = Join-Path $env:FM1_PI32_TOOLCHAIN 'bin\llvm-nm.exe'
+          $objdump = Join-Path $env:FM1_PI32_TOOLCHAIN 'bin\llvm-objdump.exe'
+          if (Test-Path $objdump) { & $objdump -h $elf | Out-String -Width 300 | Write-Host }
+          Write-Host "=== groesste Symbole ==="
+          & $nm --print-size --size-sort --radix=d $elf | Select-Object -Last 70 | Out-String -Width 300 | Write-Host
+
       - name: Ergebnis hochladen
         if: always()
         uses: actions/upload-artifact@v4
