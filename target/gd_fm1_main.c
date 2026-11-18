@@ -297,16 +297,24 @@ static uint32_t sum32(const uint8_t *d, int n)
     return h;
 }
 
+/* Diagnose (im Emulator-Abbild lesbar): [0] Kapazitaet, [1] Programmende im Flash, [2] Rueckgabe open,
+   [3] Rueckgabe Loeschen, [4] Rueckgabe Schreiben, [5] erste abweichende Position beim Zuruecklesen + 1 */
+volatile uint32_t gd_flash_diag[6];
+
 static void flash_init(void)
 {
-    u32 cap = 0;
-    norflash_open(NULL, NULL, NULL);
+    u32 cap = 0, end;
+    gd_flash_diag[2] = (uint32_t)norflash_open(NULL, NULL, NULL);
     norflash_ioctl(NULL, IOCTL_GET_CAPACITY, (u32)&cap);
-    if (cap < 0x40000u) return;
+    gd_flash_diag[0] = cap;
+    if (cap < 0x40000u || cap > 0x1000000u) cap = 0x100000u;   /* FM-1: 1 MB (JEDEC 85 60 14) */
     flash_user_addr = cap - 0x10000u;
-    /* nie in den Bereich des Programms schreiben: Ende von Code/Konstanten (Linker) + 64 KB Abstand fuer
-       die danach abgelegten Initialwerte */
-    if (cpu_addr2flash_addr((u32)(uintptr_t)text_rodata_end) + 0x10000u > flash_user_addr) flash_user_addr = 0;
+    /* nie in den Bereich des Programms schreiben: Ende von Code/Konstanten + 64 KB Abstand fuer die danach
+       abgelegten Initialwerte. XIP bildet Flash 0x4000 auf 0x02000000 ab, falls die SDK-Umrechnung nichts liefert. */
+    end = cpu_addr2flash_addr((u32)(uintptr_t)text_rodata_end);
+    if (end == 0 || end > cap) end = (u32)(uintptr_t)text_rodata_end - 0x02000000u + 0x4000u;
+    gd_flash_diag[1] = end;
+    if (end + 0x10000u > flash_user_addr) flash_user_addr = 0;
 }
 
 static void flash_load_user(void)
@@ -329,12 +337,13 @@ static int flash_save_hook(const uint8_t *data, int len)
     hdr[0] = GD_SAVE_MAGIC; hdr[1] = (uint32_t)len; hdr[2] = sum32(data, len); hdr[3] = 0;
     memcpy(flash_buf + 16, data, (size_t)len);
     total = (16u + (uint32_t)len + 3u) & ~3u;
-    for (i = 0; i < GD_SAVE_SECTORS; ++i) norflash_ioctl(NULL, IOCTL_ERASE_SECTOR, flash_user_addr + i * 4096u);
-    norflash_write(NULL, flash_buf, total, flash_user_addr);
+    for (i = 0; i < GD_SAVE_SECTORS; ++i)
+        gd_flash_diag[3] = (uint32_t)norflash_ioctl(NULL, IOCTL_ERASE_SECTOR, flash_user_addr + i * 4096u);
+    gd_flash_diag[4] = (uint32_t)norflash_write(NULL, flash_buf, total, flash_user_addr);
     for (i = 0; i < total; i += sizeof check) {   /* zuruecklesen und vergleichen */
         const uint32_t n = total - i < sizeof check ? total - i : sizeof check;
         norflash_origin_read(check, flash_user_addr + i, n);
-        if (memcmp(check, flash_buf + i, n)) { ++gd_flash_errors; return -1; }
+        if (memcmp(check, flash_buf + i, n)) { gd_flash_diag[5] = i + 1; ++gd_flash_errors; return -1; }
     }
     return 0;
 }
@@ -458,12 +467,17 @@ static int ks_shift(uint16_t word)
     GD_RD(KS_SPI + 12) = (uint32_t)(uintptr_t)gd_key_dma;
     GD_RD(KS_SPI + 16) = 2;
     GD_CHG(KS_PA, KS_LATCH, 0);              /* Latch erst nach dem Start der Uebertragung runter (wie Werk) */
+    /* Auf das Ende warten; die Uhr nur alle 256 Abfragen lesen (timer_get_ms ist teuer) */
     start = now_us(0);
-    while (!(GD_RD(KS_SPI) & 0x8000u))
+    for (;;) {
+        unsigned k;
+        for (k = 0; k < 256u; ++k) if (GD_RD(KS_SPI) & 0x8000u) break;
+        if (k < 256u) break;
         if ((uint32_t)(now_us(0) - start) >= 20000u) {
             if (GD_RD(KS_SPI) & 0x8000u) break;   /* inzwischen fertig (Task war nur verdraengt): zaehlt */
             return -1;
         }
+    }
     GD_CHG(KS_SPI, 0, 0x4000u);
     return 0;
 }
@@ -513,8 +527,8 @@ static void gd_ui_task(void *arg)
         }
         gd_app_tick(&app, (int)(now - last_tick));
         last_tick = now;
-        /* neu zeichnen bei Aenderung oder Step-Wechsel, hoechstens ca. 30 Bilder/s */
-        if ((app.uiStamp != drawn || app.seq.currentStep != step) && now - last_draw >= 33u) {
+        /* neu zeichnen bei Aenderung oder Step-Wechsel, hoechstens 20 Bilder/s (das Display wartet aktiv) */
+        if ((app.uiStamp != drawn || app.seq.currentStep != step) && now - last_draw >= 50u) {
             drawn = app.uiStamp;
             step = app.seq.currentStep;
             last_draw = now;
