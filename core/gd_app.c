@@ -25,6 +25,7 @@ static void message(gd_app *a, const char *m)
     strncpy(a->msg, m, sizeof a->msg - 1);
     a->msg[sizeof a->msg - 1] = 0;
     a->msgMs = 1500;
+    ++a->uiStamp;   /* sonst erscheint die Meldung im Stillstand erst beim naechsten Neuzeichnen */
 }
 
 void gd_app_tick(gd_app *a, int ms)
@@ -39,6 +40,7 @@ static void load_preset(gd_app *a, int idx)
     if (idx < 0) idx = gd_num_presets - 1;
     if (idx >= gd_num_presets) idx = 0;
     a->preset = idx;
+    a->presetSel = idx;
     gd_preset_load(&a->seq, idx);
     a->seq.playing = playing;
     memset(a->chanSel, 0xff, sizeof a->chanSel);
@@ -425,7 +427,20 @@ void gd_app_set_battery(gd_app *a, int percent, int charging)
 static void encoder_event(gd_app *a, int enc, int delta)
 {
     if (enc == GE_SELECT) { select_part(a, delta); return; }
-    if (enc == GE_PRESETS) { load_preset(a, a->preset + delta); return; }
+    if (enc == GE_PRESETS) {
+        /* Blaettern: zuerst nur anzeigen, geladen wird 0,5 s nach der letzten Drehung. Schnelles Drehen
+           (unter 60 ms je Rastung) springt in Zehnerschritten. */
+        char m[44];
+        int sel = a->presetSel;
+        if (a->audioMs - a->presetTurnMs < 60u) delta *= 10;
+        sel = (sel + delta) % gd_num_presets;
+        if (sel < 0) sel += gd_num_presets;
+        a->presetSel = sel;
+        a->presetTurnMs = a->audioMs;
+        snprintf(m, sizeof m, "> %03d %s", sel + 1, gd_presets[sel].name);
+        message(a, m);
+        return;
+    }
     if (enc == GE_ALGO && (a->btnDown[GB_OCTDN] || a->btnDown[GB_OCTUP])) { /* OCT halten + ALGORITHM: Transpose */
         char m[32];
         a->transpose = gd_clampi(a->transpose + delta, -12, 12);
@@ -480,6 +495,7 @@ static void advance(gd_app *a, int n)
     }
     if (a->extClock && a->audioMs - a->lastClockMs > 1000u) a->extClock = 0;
     check_holds(a);
+    if (a->presetSel != a->preset && a->audioMs - a->presetTurnMs >= 500u) load_preset(a, a->presetSel);
 }
 
 void gd_app_audio(gd_app *a, float *l, float *r, int n)

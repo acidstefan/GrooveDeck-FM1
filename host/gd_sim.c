@@ -161,7 +161,7 @@ int main(int argc, char **argv)
     shot("07_glo_page2");
     btn(GB_FX); run(0.5); shot("08_fx");
     btn(GB_SEL); enc(GE_K1, 3); run(0.8); shot("09_kanal_preset");
-    enc(GE_PRESETS, 57); run(0.3); shot("10_preset58");
+    enc(GE_PRESETS, 57); run(0.8); shot("10_preset58");
     run(3.0);
     gd_app_post_button(&app, GB_SAVE, 1); run(1.0); shot("11_saved"); gd_app_post_button(&app, GB_SAVE, 0);
     btn(GB_PLAY); run(0.5);

@@ -57,6 +57,8 @@ typedef struct {
     gd_engine eng;
     gd_seq seq;
     int preset, part, page, sub, stepMode, rec, octave, stepPage;
+    int presetSel;          /* PRESETS-Regler: angewaehltes Preset (wird nach kurzer Pause geladen) */
+    uint32_t presetTurnMs;  /* audioMs der letzten Drehung */
     int lastNote[2];
     int keyNote[GD_KEYS], keyPart[GD_KEYS];
     int btnDown[GB_COUNT];
