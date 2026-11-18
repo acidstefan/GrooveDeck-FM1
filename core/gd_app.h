@@ -18,6 +18,33 @@ enum { GE_SELECT = 0, GE_PRESETS, GE_ALGO, GE_K1, GE_K2, GE_K3, GE_K4, GE_COUNT 
 #define GD_KEY_BASE_NOTE 53 /* unterste Taste = F3 (wie die Werks-Firmware) */
 #endif
 
+/* Klaviatur: 27 Tasten chromatisch von links, die unterste ist eine C-Taste (Gehaeusebeschriftung C ... D).
+   Untere Reihe = 16 weisse Tasten, obere Reihe = 11 schwarze. */
+static inline int gd_key_white(int key)   /* Index 0..15 der weissen Taste oder -1 */
+{
+    static const signed char w[12] = { 0, -1, 1, -1, 2, 3, -1, 4, -1, 5, -1, 6 };
+    if (key < 0 || key >= GD_KEYS || w[key % 12] < 0) return -1;
+    return (key / 12) * 7 + w[key % 12];
+}
+static inline int gd_key_black(int key)   /* Index 0..10 der schwarzen Taste oder -1 */
+{
+    static const signed char b[12] = { -1, 0, -1, 1, -1, -1, 2, -1, 3, -1, 4, -1 };
+    if (key < 0 || key >= GD_KEYS || b[key % 12] < 0) return -1;
+    return (key / 12) * 5 + b[key % 12];
+}
+static inline int gd_white_key(int idx)   /* Tastennummer der weissen Taste idx (0..15) */
+{
+    static const signed char k[7] = { 0, 2, 4, 5, 7, 9, 11 };
+    return (idx / 7) * 12 + k[idx % 7];
+}
+static inline int gd_black_key(int idx)   /* Tastennummer der schwarzen Taste idx (0..10) */
+{
+    static const signed char k[5] = { 1, 3, 6, 8, 10 };
+    return (idx / 5) * 12 + k[idx % 5];
+}
+/* STEP-Modus: Funktionen der schwarzen Tasten */
+enum { BK_PAGE1 = 0, BK_PAGE2, BK_PAGE3, BK_PAGE4, BK_NOTEDN, BK_NOTEUP, BK_OCTDN, BK_OCTUP, BK_PARTDN, BK_PARTUP, BK_MODE };
+
 enum { PG_HOME = 0, PG_ENV, PG_LFO, PG_EDIT, PG_FX, PG_GLO, PG_ARP, PG_SEL, PG_COUNT };
 
 /* Ereignis aus dem Bedien-Task an den Audio-Task (Einweg-Ringpuffer, ein Schreiber, ein Leser) */

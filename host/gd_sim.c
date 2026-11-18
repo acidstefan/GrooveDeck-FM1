@@ -42,7 +42,7 @@ static void shot(const char *name)
 /* Bedienfeld mit LEDs (schematisch, keine Nachbildung des Gehaeuses): Buttons oben, 27 Tasten unten */
 extern const uint8_t gd_font5x7[95][5];
 #define PW 600
-#define PH 120
+#define PH 150
 static uint8_t panel[PH][PW][3];
 static void prect(int x, int y, int w, int h, int r, int g, int b)
 {
@@ -79,13 +79,22 @@ static void shot_panel(const char *name, uint32_t now)
         else if (b == GB_REC) led(x + 4, y + 20, 68, btn[b], 255, 40, 40);
         else led(x + 4, y + 20, 68, btn[b], 255, 255, 255);
     }
-    for (i = 0; i < GD_KEYS; ++i) {
-        const int x = 8 + i * 21;
+    for (i = 0; i < GD_KEYS; ++i) {           /* Klaviatur: weisse Tasten unten, schwarze oben dazwischen */
+        const int w = gd_key_white(i), b = gd_key_black(i);
         char nr[4];
-        prect(x, 78, 18, 36, 58, 60, 70);
-        led(x + 2, 82, 14, keys[i], 255, 255, 255);
-        snprintf(nr, sizeof nr, "%d", i + 1);
-        if (i < 9 || (i + 1) % 2 == 0) ptext(x + (i < 9 ? 6 : 3), 100, nr);
+        if (w >= 0) {
+            const int x = 8 + w * 36;
+            prect(x, 112, 32, 34, 70, 72, 82);
+            led(x + 3, 116, 26, keys[i], 255, 255, 255);
+            snprintf(nr, sizeof nr, "%d", w + 1);
+            ptext(x + (w < 9 ? 12 : 8), 130, nr);
+        } else {
+            const int x = 8 + gd_key_white(i - 1) * 36 + 22;
+            prect(x, 78, 28, 30, 40, 42, 50);
+            led(x + 3, 82, 22, keys[i], 255, 255, 255);
+            snprintf(nr, sizeof nr, "%c", "1234567890X"[b]);
+            ptext(x + 10, 94, nr);
+        }
     }
     snprintf(path, sizeof path, "%s/%s_panel.ppm", outdir, name);
     f = fopen(path, "wb");
@@ -146,9 +155,9 @@ int main(int argc, char **argv)
     btn(GB_SEQ); run(0.05);                  /* PLAY-Modus: Tasten = Noten */
     gd_app_post_key(&app, 12, 1); run(0.45); shot("06_lead_arp"); gd_app_post_key(&app, 12, 0); run(0.2);
     btn(GB_SEQ); enc(GE_SELECT, -11); run(0.05); /* zurueck auf BD, STEP */
-    key(2, 0.05); key(6, 0.05); key(10, 0.05);  /* Steps setzen */
+    key(gd_white_key(2), 0.05); key(gd_white_key(6), 0.05); key(gd_white_key(10), 0.05);  /* Steps 3, 7, 11 */
     btn(GB_GLO); enc(GE_K2, 16); run(0.05);   /* Laenge 32 */
-    btn(GB_OCTUP); run(1.0);
+    key(gd_black_key(BK_PAGE2), 0.05); run(1.0);
     shot("07_glo_page2");
     btn(GB_FX); run(0.5); shot("08_fx");
     btn(GB_SEL); enc(GE_K1, 3); run(0.8); shot("09_kanal_preset");

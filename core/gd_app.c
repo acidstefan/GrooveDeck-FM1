@@ -148,28 +148,69 @@ static void set_step(gd_app *a, int part, int step, int on, int note)
     if (on && gd_is_kbd(part)) { pt->kbdNote[part - GD_KBD1][step] = (uint8_t)note; pt->kbdLen[part - GD_KBD1][step] = 1; }
 }
 
-static void key_event(gd_app *a, int key, int down)
+static void select_part(gd_app *a, int delta);
+
+static void note_msg(gd_app *a, int note)
 {
-    const int part = a->part;
-    if (key < 0 || key >= GD_KEYS) return;
-    if (a->stepMode && down && key < 16) {             /* STEP: Tasten 1-16 schalten Steps */
-        const int step = a->stepPage * 16 + key;
+    static const char *nm[12] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
+    char b[24];
+    snprintf(b, sizeof b, "Step-Note: %s%d", nm[note % 12], note / 12 - 1);
+    message(a, b);
+}
+
+/* STEP-Modus: weisse Tasten = 16 Steps der aktuellen Seite, schwarze Tasten = Zusatzfunktionen */
+static void step_key(gd_app *a, int key)
+{
+    const int part = a->part, w = gd_key_white(key), bk = gd_key_black(key);
+    const int pages = (a->seq.pat.patLen + 15) / 16;
+    if (w >= 0) {
+        const int step = a->stepPage * 16 + w;
         if (step < a->seq.pat.patLen) {
             const int on = !((a->seq.pat.stepMask[part] >> step) & 1u);
             set_step(a, part, step, on, gd_is_kbd(part) ? a->lastNote[part - GD_KBD1] : 60);
         }
         return;
     }
-    if (a->stepMode && key < 16) return;
+    switch (bk) {
+        case BK_PAGE1: case BK_PAGE2: case BK_PAGE3: case BK_PAGE4:
+            if (bk < pages) {
+                char b[24];
+                a->stepPage = bk;
+                snprintf(b, sizeof b, "Steps %d-%d", bk * 16 + 1, bk * 16 + 16);
+                message(a, b);
+            } else message(a, "Seite nicht vorhanden (GLO: Laenge)");
+            break;
+        case BK_NOTEDN: case BK_NOTEUP: case BK_OCTDN: case BK_OCTUP:
+            if (gd_is_kbd(part)) {
+                static const int d[4] = { -1, 1, -12, 12 };
+                int *n = &a->lastNote[part - GD_KBD1];
+                *n = gd_clampi(*n + d[bk - BK_NOTEDN], 0, 127);
+                note_msg(a, *n);
+            } else message(a, "Step-Note nur bei Bass/Lead");
+            break;
+        case BK_PARTDN: select_part(a, -1); message(a, gd_part_short(a->part)); break;
+        case BK_PARTUP: select_part(a, 1); message(a, gd_part_short(a->part)); break;
+        case BK_MODE: a->stepMode = 0; message(a, "PLAY: Tasten = Noten"); break;
+        default: break;
+    }
+}
+
+static void key_event(gd_app *a, int key, int down)
+{
+    const int part = a->part;
+    if (key < 0 || key >= GD_KEYS) return;
+    if (a->stepMode) {                                  /* STEP: nur Druecken zaehlt, nichts klingt */
+        if (down) step_key(a, key);
+        return;
+    }
     if (down) {
         int p = part, note;
         if (gd_is_kbd(part)) {
             note = gd_clampi(GD_KEY_BASE_NOTE + key + 12 * a->octave + a->transpose, 0, 127);
-            if (a->stepMode && key >= 16) note = gd_clampi(GD_KEY_BASE_NOTE + 12 + (key - 16) + 12 * a->octave + a->transpose, 0, 127);
             a->lastNote[part - GD_KBD1] = note;
         } else {
             /* Drum gewaehlt: unterste neun Tasten = Drum 1..7B (Fingerdrumming), sonst der gewaehlte Part */
-            if (!a->stepMode && key < 9) p = key;
+            if (key < 9) p = key;
             note = 60;
         }
         if (p == GD_ACCENT) return;

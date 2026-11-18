@@ -21,17 +21,17 @@ void gd_leds_compute(const gd_app *a, uint32_t now, uint8_t keys[GD_KEYS], uint8
     /* ------------------------------------------------ Tasten (27) */
     for (k = 0; k < GD_KEYS; ++k) keys[k] = L_OFF;
     if (a->stepMode) {
-        /* Tasten 1-16: Steps der aktuellen Seite; laufender Step blinkt schnell */
+        /* weisse Tasten: Steps der aktuellen Seite; laufender Step blinkt schnell */
         for (k = 0; k < 16; ++k) {
             const int st = a->stepPage * 16 + k;
             const int on = st < pl && ((s->pat.stepMask[part] >> st) & 1u);
             uint8_t v = on ? L_ON : L_OFF;
             if (s->playing && s->currentStep == st) v = blink(now, 160u, L_ON, on ? L_DIM : L_OFF);
             else if (!on && st < pl && (k & 3) == 0) v = 8; /* Zaehlzeit schwach markiert */
-            keys[k] = v;
+            keys[gd_white_key(k)] = v;
         }
-        if (!kbd) /* Drums: Tasten 17-20 zeigen die Step-Seiten (aktuelle hell, vorhandene schwach) */
-            for (p = 0; p < pages && p < 4; ++p) keys[16 + p] = p == a->stepPage ? L_ON : L_DIM;
+        /* schwarze Tasten 1-4: Step-Seiten (aktuelle hell, vorhandene schwach) */
+        for (p = 0; p < pages && p < 4; ++p) keys[gd_black_key(BK_PAGE1 + p)] = p == a->stepPage ? L_ON : L_DIM;
     } else if (kbd) {
         /* PLAY, Bass/Lead: klingende Noten (auch vom Arpeggiator und Sequencer) */
         const gd_part *P = &a->eng.parts[part];

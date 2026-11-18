@@ -184,7 +184,7 @@ static void test_midi_leds(void)
     gd_leds_compute(&app, 0, keys, btn, &green);
     for (k = 0; k < 16; ++k) {
         const int on = (int)((app.seq.pat.stepMask[app.part] >> k) & 1u);
-        CHECK((keys[k] == 255) == on, "LED: Step-Anzeige stimmt nicht");
+        CHECK((keys[gd_white_key(k)] == 255) == on, "LED: Step-Anzeige stimmt nicht");
     }
     CHECK(btn[GB_SEQ] == 255 && btn[GB_PLAY] == 255 && green == 0 && btn[GB_HOME] == 255, "LED: Buttons im Stopp-Zustand");
     /* SAVE halten speichert erst nach 0,8 s */
@@ -202,6 +202,44 @@ static void test_midi_leds(void)
     CHECK(app.transpose == 3 && app.octave == 0 && app.stepPage == 0, "Transpose-Kombination");
 }
 
+static void test_step_keys(void)
+{
+    int k, w = 0, b = 0;
+    for (k = 0; k < GD_KEYS; ++k) {
+        if (gd_key_white(k) >= 0) { CHECK(gd_white_key(gd_key_white(k)) == k, "Tasten: weiss falsch"); ++w; }
+        if (gd_key_black(k) >= 0) { CHECK(gd_black_key(gd_key_black(k)) == k, "Tasten: schwarz falsch"); ++b; }
+    }
+    CHECK(w == 16 && b == 11, "Tasten: 16 weisse / 11 schwarze erwartet");
+    gd_app_init(&app, 44100.0f);
+    run_audio(&app, 1);
+    CHECK(app.stepMode == 1, "STEP-Modus ist nicht Standard");
+    app.part = 0;
+    {
+        const uint64_t before = app.seq.pat.stepMask[0];
+        gd_app_post_key(&app, gd_white_key(5), 1); gd_app_post_key(&app, gd_white_key(5), 0);
+        gd_app_post_key(&app, gd_black_key(0), 1); gd_app_post_key(&app, gd_black_key(0), 0);  /* Seite 1: keine Aenderung */
+        run_audio(&app, 1);
+        CHECK(app.seq.pat.stepMask[0] == (before ^ ((uint64_t)1 << 5)), "STEP: weisse Taste 6 schaltet Step 6 nicht");
+    }
+    app.seq.pat.patLen = 32;
+    app.part = GD_KBD1;
+    {
+        const int n0 = app.lastNote[0];
+        gd_app_post_key(&app, gd_black_key(BK_PAGE2), 1);
+        gd_app_post_key(&app, gd_black_key(BK_NOTEUP), 1);
+        gd_app_post_key(&app, gd_black_key(BK_OCTUP), 1);
+        gd_app_post_key(&app, gd_white_key(0), 1);
+        run_audio(&app, 1);
+        CHECK(app.stepPage == 1, "STEP: schwarze Taste 2 waehlt Seite 2 nicht");
+        CHECK(app.lastNote[0] == n0 + 13, "STEP: Step-Note +1/+12 falsch");
+        CHECK(((app.seq.pat.stepMask[GD_KBD1] >> 16) & 1u) && app.seq.pat.kbdNote[0][16] == n0 + 13,
+              "STEP: Bass-Step 17 nicht mit Step-Note gesetzt");
+        gd_app_post_key(&app, gd_black_key(BK_MODE), 1);
+        run_audio(&app, 1);
+        CHECK(app.stepMode == 0, "STEP: schwarze Taste 11 schaltet nicht auf PLAY");
+    }
+}
+
 int main(void)
 {
     test_math();
@@ -210,6 +248,7 @@ int main(void)
     test_seq_arp();
     test_presets_load();
     test_midi_leds();
+    test_step_keys();
     if (fails) { printf("%d Test(s) fehlgeschlagen\n", fails); return 1; }
     printf("Alle Tests bestanden\n");
     return 0;

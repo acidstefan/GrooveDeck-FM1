@@ -72,7 +72,7 @@ Status: **umgesetzt** = Verhalten in `core/` programmiert und am PC getestet. **
 | Button | Drücken | Halten / Kombination | LED |
 |---|---|---|---|
 | HOME, ENV, LFO, EDIT, FX, GLO, ARP, SEL | Reglerseite wählen; erneut drücken = Seite B | HOME lang: Bluetooth (noch nicht unterstützt) | Seite A: an, Seite B: pulsiert; ARP glimmt, wenn ein Arpeggiator läuft |
-| SEQ | Tastatur: STEP (Tasten 1–16 = Steps) ↔ PLAY (Tasten spielen) | – | an im STEP-Modus |
+| SEQ | Tastatur: STEP (weiße Tasten = Steps, schwarze = Zusatzfunktionen) ↔ PLAY (Tasten spielen) | – | an im STEP-Modus |
 | PLAY/STOP | Start/Stopp | – | grün beim Spielen (blinkt bei externer Clock), weiß im Stopp |
 | REC | Live-Aufnahme an/aus | – | rot; blinkt, solange angehalten |
 | SAVE | – | halten (0,8 s): sichern; SEL + SAVE: Gesichertes laden | glimmt bei ungesicherten Änderungen, hell beim Halten |
@@ -80,12 +80,14 @@ Status: **umgesetzt** = Verhalten in `core/` programmiert und am PC getestet. **
 
 ### Tastatur und Tasten-LEDs
 
+Die Klaviatur hat 27 Tasten: unten 16 weiße, oben 11 schwarze. SEQ schaltet zwischen STEP (Steps setzen) und PLAY (spielen).
+
 | Modus | Tasten | LEDs |
 |---|---|---|
-| STEP, Drums | 1–16: Step an/aus auf der aktuellen Seite | Steps an; laufender Step blinkt; Zählzeiten schwach. 17–20: Step-Seiten (aktuelle hell) |
-| STEP, Bass/Lead | 1–16: Step an/aus (mit zuletzt gespielter Note); 17–27: Note wählen | wie oben, gedrückte Tasten hell |
-| PLAY, Drums | 1–9: die neun Drums (Fingerdrumming) | Taste blitzt beim Auslösen des Drums auf, auch vom Sequencer |
-| PLAY, Bass/Lead | chromatisch ab F3 (Oktave/Transpose), über Arp/Chord, falls an | alle klingenden Töne, auch vom Arpeggiator und Sequencer |
+| STEP | weiße Tasten 1–16: Step an/aus auf der aktuellen Seite (Bass/Lead mit der Step-Note); es klingt nichts | Steps an; laufender Step blinkt; Zählzeiten schwach |
+| STEP | schwarze Tasten: 1–4 Step-Seite 1–4 · 5/6 Step-Note −/+ Halbton · 7/8 Step-Note −/+ Oktave · 9/10 Kanal zurück/vor · 11 auf PLAY umschalten | schwarze 1–4: vorhandene Seiten schwach, aktuelle hell |
+| PLAY, Drums | 1–9 (von links, chromatisch): die neun Drums (Fingerdrumming) | Taste blitzt beim Auslösen des Drums auf, auch vom Sequencer |
+| PLAY, Bass/Lead | chromatisch (Oktave/Transpose), über Arp/Chord, falls an; die zuletzt gespielte Note wird Step-Note | alle klingenden Töne, auch vom Arpeggiator und Sequencer |
 
 REC während der Wiedergabe: Gespielte Noten (Tastatur oder MIDI) landen auf dem nächsten Step.
 
