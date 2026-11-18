@@ -175,6 +175,7 @@ def main():
     L.append("/* AUTOMATISCH ERZEUGT von tools/gen_presets_c.py aus GrooveDeck Source/Presets.h und ChannelPresets.h.")
     L.append("   Nicht von Hand aendern. Format siehe core/gd_preset.c. */")
     L.append('#include "gd_preset.h"')
+    L.append("#if !GD_PRESETS_MINI   /* FM-1 (FM1 Open): kleiner Satz in gd_presets_mini.c, Rest als Paket im Flash */")
     L.append("")
     L.append("const int gd_num_genres = %d;" % len(genres))
     L.append("const char *const gd_genre_names[] = { %s };" % ", ".join(c_str(ascii_name(g)) for g in genres))
@@ -197,6 +198,8 @@ def main():
     for i in range(0, len(blob), 24):
         L.append("    " + ",".join(str(b) for b in blob[i:i + 24]) + ",")
     L.append("};")
+    L.append("const unsigned gd_preset_blob_packed = 0;")
+    L.append("#endif")
     a.out.write_text("\n".join(L) + "\n", encoding="ascii")
     print("%d Presets, %d Kanal-Presets, %d Byte Daten -> %s" % (len(pres), len(chans), len(blob), a.out))
 

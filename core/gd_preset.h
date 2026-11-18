@@ -20,6 +20,23 @@ extern const int gd_num_chan_presets;
 extern const gd_chan_entry gd_chan_presets[];
 extern const unsigned gd_preset_blob_size;
 extern const uint8_t gd_preset_blob[];
+/* GD_PRESETS_MINI: gd_preset_blob ist LZ-komprimiert (siehe gd_lz_extract), gd_preset_blob_size = Rohgroesse */
+extern const unsigned gd_preset_blob_packed;
+
+/* Song-Presets ueber eine Quelle: eingebaut (gd_presets) oder extern (z. B. Preset-Paket im Flash des FM-1). */
+typedef struct { uint8_t genre, sub; char name[24]; } gd_preset_meta;
+typedef struct {
+    int count;
+    int (*meta)(int index, gd_preset_meta *m);          /* 0 = ok */
+    int (*read)(int index, uint8_t *buf, int cap);      /* Laenge oder -1 */
+} gd_preset_source;
+void gd_preset_set_external(const gd_preset_source *src);   /* NULL: eingebaute Presets */
+int gd_preset_external(void);                               /* 1, wenn eine externe Quelle aktiv ist */
+int gd_preset_count(void);
+/* Name/Richtung eines Presets; Zeiger gilt bis zum naechsten Aufruf (zwischengespeichert). Nie NULL. */
+const gd_preset_meta *gd_preset_meta_get(int index);
+/* Bytes [off, off+len) des LZ-Stroms (1-KB-Fenster) entpacken. 0 = ok */
+int gd_lz_extract(const uint8_t *src, unsigned srclen, unsigned off, unsigned len, uint8_t *dst);
 
 /* Werkspreset laden: Patch zuruecksetzen (Master-Lautstaerke bleibt), Pattern und Parameter setzen. 0 = ok */
 int gd_preset_load(gd_seq *s, int index);

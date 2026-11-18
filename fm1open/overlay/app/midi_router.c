@@ -78,5 +78,5 @@ FM1_AUDIO_CODE void groove_midi_track_reset(unsigned track) { (void)track; }
 FM1_AUDIO_CODE void groove_midi_transport(unsigned owner, uint8_t status) { (void)owner; (void)status; }
 FM1_AUDIO_CODE void groove_midi_clock(unsigned owner, unsigned tempo) { (void)owner; (void)tempo; }
 
-/* SysEx der App (Firmware-Updates behandelt die Bibliothek vorher selbst): GrooveDeck nutzt keine */
-void fm1_app_sysex(const uint8_t *message, size_t bytes) { (void)message; (void)bytes; }
+/* SysEx der App (Firmware-Updates behandelt die Bibliothek vorher selbst): Preset-Paket aufspielen */
+void fm1_app_sysex(const uint8_t *message, size_t bytes) { gd_pack_sysex(message, bytes); }

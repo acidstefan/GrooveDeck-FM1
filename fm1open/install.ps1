@@ -38,7 +38,7 @@ New-Item -ItemType Directory -Path $gd | Out-Null
 Get-ChildItem -Path (Join-Path $repo 'core') -File | Where-Object { $_.Extension -in @('.c','.h') } |
     ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $gd }
 $settings = "/* Von fm1open\install.ps1 gesetzt (FM1 Open) */`n" +
-    "#define GD_TARGET_FM1 1`n#define GD_FM1OPEN 1`n" +
+    "#define GD_TARGET_FM1 1`n#define GD_FM1OPEN 1`n#define GD_PRESETS_MINI 1`n" +
     "#define GD_DELAY_LEN $DelayLen`n#define GD_MAX_VOICES $Voices`n" +
     "#define GD_REVERB_STEREO $([int][bool]$StereoReverb)`n#define GD_GOOD_FULLRATE $([int][bool]$GoodFullRate)`n`n"
 $config = Join-Path $gd 'gd_config.h'

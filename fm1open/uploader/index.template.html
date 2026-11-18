@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GrooveDeck FM-1 – Presets aufspielen</title>
+<style>
+  :root { color-scheme: light dark; --acc: #e8742c; --bg: #16181c; --panel: #22252b; --text: #e9e9ea; --dim: #9aa0a8; }
+  body { margin: 0; font: 15px/1.5 system-ui, sans-serif; background: var(--bg); color: var(--text); }
+  main { max-width: 640px; margin: 40px auto; padding: 0 20px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  p { color: var(--dim); margin: 0 0 16px; }
+  .card { background: var(--panel); border-radius: 10px; padding: 18px; margin-bottom: 16px; }
+  label { display: block; font-size: 13px; color: var(--dim); margin: 10px 0 4px; }
+  select, button { font: inherit; padding: 8px 10px; border-radius: 6px; border: 1px solid #3a3f47; background: #1b1d22; color: var(--text); width: 100%; }
+  button { background: var(--acc); border: 0; color: #111; font-weight: 600; cursor: pointer; margin-top: 14px; }
+  button:disabled { opacity: .45; cursor: default; }
+  button.sec { background: #2f333a; color: var(--text); }
+  .bar { height: 10px; background: #1b1d22; border-radius: 5px; overflow: hidden; margin-top: 14px; }
+  .bar > div { height: 100%; width: 0; background: var(--acc); transition: width .1s; }
+  #status { margin-top: 10px; min-height: 1.5em; }
+  ol { color: var(--dim); padding-left: 20px; margin: 0; }
+  code { background: #1b1d22; padding: 1px 5px; border-radius: 4px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>GrooveDeck FM-1 – Presets aufspielen</h1>
+  <p>Spielt alle @@COUNT@@ Song-Presets per USB-MIDI in den Nutzerspeicher des FM-1. Ohne sie nutzt GrooveDeck
+     den kleinen Satz aus der Firmware (ein Preset je Richtung).</p>
+  <div class="card">
+    <ol>
+      <li>FM-1 mit GrooveDeck-Firmware per USB anschließen.</li>
+      <li>Diese Seite in Chrome oder Edge öffnen und MIDI mit SysEx erlauben.</li>
+      <li>Ein- und Ausgang des FM-1 wählen und „Presets aufspielen“ drücken (etwa 20–40 s).</li>
+    </ol>
+  </div>
+  <div class="card">
+    <label for="out">MIDI-Ausgang (zum FM-1)</label>
+    <select id="out"></select>
+    <label for="in">MIDI-Eingang (vom FM-1)</label>
+    <select id="in"></select>
+    <button id="query" class="sec">Verbindung prüfen</button>
+    <button id="send">Presets aufspielen</button>
+    <div class="bar"><div id="fill"></div></div>
+    <div id="status">MIDI wird angefragt …</div>
+  </div>
+</main>
+<script>
+const PACK = Uint8Array.from(atob("@@PACK_B64@@"), c => c.charCodeAt(0));
+const HDR = [0xF0, 0x7D, 0x47, 0x44];
+const CHUNK = 224;
+let midi = null, waiter = null;
+const $ = id => document.getElementById(id);
+const status = t => { $("status").textContent = t; };
+
+function u35(v) { const r = []; for (let i = 0; i < 5; i++) { r.push(v & 0x7F); v = Math.floor(v / 128); } return r; }
+function d35(a) { let v = 0; for (let i = 4; i >= 0; i--) v = v * 128 + (a[i] & 0x7F); return v; }
+function pack7(b) {
+  const r = [];
+  for (let i = 0; i < b.length; i += 7) {
+    const g = b.subarray(i, i + 7); let m = 0;
+    g.forEach((x, k) => { if (x & 0x80) m |= 1 << k; });
+    r.push(m); g.forEach(x => r.push(x & 0x7F));
+  }
+  return r;
+}
+function ports(kind) { return midi ? [...(kind === "out" ? midi.outputs : midi.inputs).values()] : []; }
+function fill(sel, list) {
+  const keep = sel.value; sel.innerHTML = "";
+  list.forEach(p => { const o = document.createElement("option"); o.value = p.id; o.textContent = p.name; sel.appendChild(o); });
+  const guess = list.find(p => /fm-?1|m-?vave|groove/i.test(p.name));
+  if (list.some(p => p.id === keep)) sel.value = keep; else if (guess) sel.value = guess.id;
+}
+function refresh() { fill($("out"), ports("out")); fill($("in"), ports("in")); hook(); }
+function hook() { ports("in").forEach(p => { p.onmidimessage = p.id === $("in").value ? onMsg : null; }); }
+function onMsg(e) {
+  const d = e.data;
+  if (d.length >= 13 && d[0] === 0xF0 && d[1] === 0x7D && d[2] === 0x47 && d[3] === 0x44 && d[4] === 0x7F && waiter) {
+    const w = waiter; waiter = null; w({ cmd: d[5], st: d[6], val: d35(d.slice(7, 12)) });
+  }
+}
+function request(bytes, ms = 3000) {
+  const out = midi.outputs.get($("out").value);
+  if (!out) return Promise.reject(new Error("Kein MIDI-Ausgang gewählt"));
+  return new Promise((ok, fail) => {
+    const t = setTimeout(() => { waiter = null; fail(new Error("keine Antwort vom FM-1")); }, ms);
+    waiter = r => { clearTimeout(t); ok(r); };
+    out.send([...HDR, ...bytes, 0xF7]);
+  });
+}
+async function retry(bytes, ms) {
+  let err;
+  for (let i = 0; i < 4; i++) { try { return await request(bytes, ms); } catch (e) { err = e; } }
+  throw err;
+}
+function busy(on) { $("send").disabled = $("query").disabled = on; }
+
+$("query").onclick = async () => {
+  busy(true);
+  try {
+    const r = await retry([0x04], 1500);
+    status(r.val ? `FM-1 antwortet: ${r.val} Presets im Nutzerspeicher.` : "FM-1 antwortet: noch kein Preset-Paket im Nutzerspeicher.");
+  } catch (e) { status("Fehler: " + e.message + " – richtigen Ein-/Ausgang gewählt, GrooveDeck-Firmware drauf?"); }
+  busy(false);
+};
+
+$("send").onclick = async () => {
+  busy(true); $("fill").style.width = "0";
+  try {
+    let r = await retry([0x01, ...u35(PACK.length)], 3000);
+    if (r.st) throw new Error("FM-1 lehnt das Paket ab (zu groß?)");
+    let off = 0;
+    const t0 = performance.now();
+    while (off < PACK.length) {
+      const chunk = PACK.subarray(off, Math.min(off + CHUNK, PACK.length));
+      r = await retry([0x02, ...u35(off), ...pack7(chunk)], 4000);
+      if (r.st === 0) off += chunk.length;
+      else if (r.st === 2) off = r.val;                        /* Gerät erwartet anderen Offset */
+      else throw new Error("Schreibfehler im Flash bei Byte " + off);
+      $("fill").style.width = (100 * off / PACK.length).toFixed(1) + "%";
+      status(`Übertrage … ${Math.round(100 * off / PACK.length)} %`);
+    }
+    r = await retry([0x03], 15000);
+    if (r.st) throw new Error("Prüfsumme auf dem FM-1 falsch – bitte erneut aufspielen");
+    status(`Fertig: ${r.val} Presets aufgespielt (${((performance.now() - t0) / 1000).toFixed(1)} s).`);
+  } catch (e) { status("Fehler: " + e.message); }
+  busy(false);
+};
+
+if (!navigator.requestMIDIAccess) {
+  status("Dieser Browser kann kein Web-MIDI. Bitte Chrome oder Edge nehmen."); busy(true);
+} else {
+  navigator.requestMIDIAccess({ sysex: true }).then(m => {
+    midi = m; m.onstatechange = refresh; refresh(); $("in").onchange = hook;
+    status(ports("out").length ? "Bereit." : "Kein MIDI-Gerät gefunden – FM-1 anschließen.");
+  }, () => { status("MIDI-Zugriff (SysEx) wurde nicht erlaubt."); busy(true); });
+}
+</script>
+</body>
+</html>

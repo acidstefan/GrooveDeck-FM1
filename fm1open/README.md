@@ -52,6 +52,25 @@ Ergebnis: `C:\fm1\fm1_open\build\dx7\generated\FM1_OFFICIAL_OPEN.fwsc` (Firmware
 `-Voices 4`, `-StereoReverb`, `-GoodFullRate`. Die Voreinstellungen sind sparsam, weil die Bibliothek
 selbst rund 220 KB des Arbeitsspeichers belegt und Build.ps1 mindestens 48 KB freien Heap verlangt.
 
+## Online bauen (GitHub Actions)
+
+Ohne eigene Toolchain: Unter *Actions → FM1 Open Firmware* baut jeder Push (oder „Run workflow“) die Firmware
+auf einem Windows-Rechner von GitHub. Download am Lauf unter *Artifacts* → `groovedeck-fm1open`
+(`FM1_OFFICIAL_OPEN.fwsc`, `firmware-report.json`, `build-log.txt`, `sdk.map`).
+
+## Presets
+
+Das Firmware-Abbild darf höchstens rund 443 KB groß sein; alle 440 Song-Presets (200 KB) passen nicht hinein.
+Darum:
+- **In der Firmware:** je Richtung ein Song-Preset (22) und alle 92 Kanal-Presets, LZ-komprimiert
+  (`core/gd_presets_mini.c`, 5 KB).
+- **Im Nutzerspeicher:** alle 440 Song-Presets als Paket (213 KB) ab Byte 8192 der Benutzer-Partition
+  (davor der mit SAVE gesicherte Stand). Aufspielen: `fm1open/uploader/index.html` in Chrome oder Edge öffnen,
+  FM-1 per USB anschließen, „Presets aufspielen“. Das Paket wird beim Start per Prüfsumme geprüft; ist es
+  defekt oder fehlt es, nimmt GrooveDeck den kleinen Satz.
+
+Beides erzeugt `python tools/gen_presets_pack.py` aus `core/gd_presets_data.c`.
+
 ## Vor dem Aufspielen
 
 Noch nicht auf das Gerät spielen, solange der Bau nicht fehlerfrei durchläuft und die Punkte unten nicht
@@ -63,7 +82,7 @@ geklärt sind. Allgemein gilt:
 
 ## Offen / ungetestet
 
-- Bisher nur gegen die SDK-Header geprüft, noch nicht mit der Windows-Toolchain gebaut.
+- Baut mit der Windows-Toolchain und besteht die Prüfungen von Build.ps1; auf dem Gerät noch nicht getestet.
 - Ton wird im Control-Task vorausgerechnet (46 ms Vorrat); wie oft die Bibliothek diesen Task aufruft, zeigt
   erst das Gerät (Meldung bei Aussetzern: Zähler `gd_underruns`).
 - Drehrichtung der Regler, Akku-Umrechnung (Annahme: Teiler 1:2, 3,3 V) und LED-Helligkeit am Gerät prüfen.

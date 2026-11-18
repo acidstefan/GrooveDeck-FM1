@@ -10,6 +10,7 @@
    Wert: Bit 15 gesetzt -> Ganzzahl (v & 0x7FFF) - 16384, sonst v / 10000. */
 #include "gd_preset.h"
 #include "gd_math.h"
+#include <string.h>
 
 static float dec_val(unsigned v)
 {
@@ -93,14 +94,104 @@ static int decode(gd_seq *s, const uint8_t *data, const uint8_t *end, int chanPa
     return 0;
 }
 
+/* ------------------------------------------------------------ Quellen */
+#ifndef GD_PRESETS_MINI
+#define GD_PRESETS_MINI 0
+#endif
+#define GD_PRESET_MAX 1024                     /* groesstes Preset (Werk: 666 Bytes) */
+static uint8_t pbuf[GD_PRESET_MAX];
+static const gd_preset_source *ext;
+static int meta_idx = -1;
+static gd_preset_meta meta_cache;
+
+int gd_lz_extract(const uint8_t *src, unsigned srclen, unsigned off, unsigned len, uint8_t *dst)
+{
+    /* Format: Flagbyte (Bit 0 zuerst), je Bit 1 = Verweis 2 Byte ((Abstand-1)<<6 | (Laenge-3)), 0 = Literal */
+    static uint8_t win[1024];
+    unsigned in = 0, out = 0, flags = 0, nb = 0;
+    const unsigned stop = off + len;
+    while (out < stop) {
+        if (!nb) { if (in >= srclen) return -1; flags = src[in++]; nb = 8; }
+        if (flags & 1u) {
+            unsigned v, d, l;
+            if (in + 1 >= srclen) return -1;
+            v = ((unsigned)src[in] << 8) | src[in + 1]; in += 2;
+            d = (v >> 6) + 1; l = (v & 63u) + 3;
+            if (d > out) return -1;
+            while (l-- && out < stop) {
+                const uint8_t c = win[(out - d) & 1023u];
+                win[out & 1023u] = c;
+                if (out >= off) dst[out - off] = c;
+                ++out;
+            }
+        } else {
+            uint8_t c;
+            if (in >= srclen) return -1;
+            c = src[in++];
+            win[out & 1023u] = c;
+            if (out >= off) dst[out - off] = c;
+            ++out;
+        }
+        flags >>= 1; --nb;
+    }
+    return 0;
+}
+
+/* eingebaute Daten [off, end) nach pbuf; Laenge oder -1 */
+static int builtin_bytes(unsigned off, unsigned end)
+{
+    unsigned i;
+    if (end <= off || end > gd_preset_blob_size || end - off > GD_PRESET_MAX) return -1;
+#if GD_PRESETS_MINI
+    if (gd_lz_extract(gd_preset_blob, gd_preset_blob_packed, off, end - off, pbuf)) return -1;
+#else
+    for (i = 0; i < end - off; ++i) pbuf[i] = gd_preset_blob[off + i];
+#endif
+    (void)i;
+    return (int)(end - off);
+}
+
+static unsigned song_end(int index)
+{
+    if (index + 1 < gd_num_presets) return gd_presets[index + 1].offset;
+    return gd_num_chan_presets ? gd_chan_presets[0].offset : gd_preset_blob_size;
+}
+
+void gd_preset_set_external(const gd_preset_source *src) { ext = (src && src->count > 0) ? src : 0; meta_idx = -1; }
+int gd_preset_external(void) { return ext != 0; }
+int gd_preset_count(void) { return ext ? ext->count : gd_num_presets; }
+
+const gd_preset_meta *gd_preset_meta_get(int index)
+{
+    int i;
+    if (index == meta_idx) return &meta_cache;
+    memset(&meta_cache, 0, sizeof meta_cache);
+    meta_idx = -1;
+    if (index < 0 || index >= gd_preset_count()) return &meta_cache;
+    if (ext) {
+        if (ext->meta(index, &meta_cache)) { memset(&meta_cache, 0, sizeof meta_cache); return &meta_cache; }
+        meta_cache.name[sizeof meta_cache.name - 1] = 0;
+    } else {
+        meta_cache.genre = gd_presets[index].genre;
+        meta_cache.sub = gd_presets[index].sub;
+        for (i = 0; i < (int)sizeof meta_cache.name - 1 && gd_presets[index].name[i]; ++i) meta_cache.name[i] = gd_presets[index].name[i];
+    }
+    if (meta_cache.genre >= gd_num_genres) meta_cache.genre = 0;
+    if (meta_cache.sub >= 5) meta_cache.sub = 0;
+    meta_idx = index;
+    return &meta_cache;
+}
+
 int gd_preset_load(gd_seq *s, int index)
 {
-    int r;
-    if (index < 0 || index >= gd_num_presets) return -1;
+    int r, n;
+    if (index < 0 || index >= gd_preset_count()) return -1;
+    n = ext ? ext->read(index, pbuf, GD_PRESET_MAX) : builtin_bytes(gd_presets[index].offset, song_end(index));
+    if (n <= 0) return -1;
     gd_seq_panic(s);
     gd_engine_reset_patch(s->eng);
     gd_pattern_clear(&s->pat);
-    r = decode(s, gd_preset_blob + gd_presets[index].offset, gd_preset_blob + gd_preset_blob_size, -1);
+    r = decode(s, pbuf, pbuf + n, -1);
     gd_engine_update(s->eng);
     return r;
 }
@@ -140,7 +231,12 @@ int gd_chan_preset_apply(gd_seq *s, int part, int index)
     for (i = 0; i < sizeof ctl / sizeof ctl[0]; ++i) e->parts[part].p[ctl[i]] = gd_part_default(part, ctl[i]);
     for (i = PF_X0; i < PF_SRC; ++i) if ((int)i != PF_LOWBOOST) e->parts[part].p[i] = gd_part_default(part, (int)i);
     e->parts[part].p[PF_SRC] = gd_part_default(part, PF_SRC);
-    r = decode(s, gd_preset_blob + gd_chan_presets[index].offset, gd_preset_blob + gd_preset_blob_size, part);
+    {
+        const unsigned end = index + 1 < gd_num_chan_presets ? gd_chan_presets[index + 1].offset : gd_preset_blob_size;
+        const int n = builtin_bytes(gd_chan_presets[index].offset, end);
+        if (n <= 0) return -1;
+        r = decode(s, pbuf, pbuf + n, part);
+    }
     gd_engine_update(e);
     return r;
 }

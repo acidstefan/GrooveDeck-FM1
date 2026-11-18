@@ -81,7 +81,7 @@ static void note_name(int n, char *b, int cap)
 static void draw_header(const gd_app *a, gd_canvas *c)
 {
     char b[48];
-    const gd_preset_entry *pe = &gd_presets[a->preset];
+    const gd_preset_meta *pe = gd_preset_meta_get(a->preset);
     fill(c, 0, 0, 240, 18, C_PANEL);
     gd_snprintf(b, sizeof b, "%03d", a->preset + 1);
     text(c, 4, 5, b, C_ACC, 1);

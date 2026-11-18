@@ -37,8 +37,8 @@ static void load_preset(gd_app *a, int idx)
 {
     char m[40];
     const int playing = a->seq.playing;
-    if (idx < 0) idx = gd_num_presets - 1;
-    if (idx >= gd_num_presets) idx = 0;
+    if (idx < 0) idx = gd_preset_count() - 1;
+    if (idx >= gd_preset_count()) idx = 0;
     a->preset = idx;
     a->presetSel = idx;
     gd_preset_load(&a->seq, idx);
@@ -46,7 +46,7 @@ static void load_preset(gd_app *a, int idx)
     memset(a->chanSel, 0xff, sizeof a->chanSel);
     a->stepPage = 0;
     a->dirty = 0;
-    gd_snprintf(m, sizeof m, "%03d %s", idx + 1, gd_presets[idx].name);
+    gd_snprintf(m, sizeof m, "%03d %s", idx + 1, gd_preset_meta_get(idx)->name);
     message(a, m);
 }
 
@@ -474,11 +474,11 @@ static void encoder_event(gd_app *a, int enc, int delta)
         char m[44];
         int sel = a->presetSel;
         if (a->audioMs - a->presetTurnMs < 60u) delta *= 10;
-        sel = (sel + delta) % gd_num_presets;
-        if (sel < 0) sel += gd_num_presets;
+        sel = (sel + delta) % gd_preset_count();
+        if (sel < 0) sel += gd_preset_count();
         a->presetSel = sel;
         a->presetTurnMs = a->audioMs;
-        gd_snprintf(m, sizeof m, "> %03d %s", sel + 1, gd_presets[sel].name);
+        gd_snprintf(m, sizeof m, "> %03d %s", sel + 1, gd_preset_meta_get(sel)->name);
         message(a, m);
         return;
     }

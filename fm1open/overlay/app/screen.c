@@ -135,6 +135,7 @@ void groove_screen_init(void)
     fm1_screen_init();
     gd_app_init(&gd_state, (float)FM1_SAMPLE_RATE);
     gd_flash_load();
+    gd_pack_init();
     gd_state.save_hook = gd_flash_save_hook;
     for (i = 0; i < 41; ++i) gd_led_level(i, 0);
     gd_led_green(0);
@@ -185,6 +186,7 @@ void groove_screen_control(void)
     audio_pump();
     gd_midi_poll();
     gd_flash_poll();
+    gd_pack_poll();
 
     if (now - last_led >= 5u) { last_led = now; update_leds(now); }
     if (((int)gd_state.uiStamp != drawn_stamp || gd_state.seq.currentStep != drawn_step) && now - last_draw >= 40u) {

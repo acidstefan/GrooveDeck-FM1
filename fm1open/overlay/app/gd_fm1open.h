@@ -4,6 +4,7 @@
 #ifndef GD_FM1OPEN_H
 #define GD_FM1OPEN_H
 #include <stdint.h>
+#include <stddef.h>
 #include "fm1.h"
 #include "gd/gd_app.h"
 
@@ -25,5 +26,10 @@ void gd_midi_poll(void);
 void gd_flash_load(void);
 int gd_flash_save_hook(const uint8_t *data, int len);   /* aus dem Audio-Interrupt: nur vormerken */
 void gd_flash_poll(void);
+
+/* gd_presetpack.c: Preset-Paket im Nutzerspeicher, Aufspielen per SysEx */
+void gd_pack_init(void);                                  /* Control-Task, nach gd_flash_load */
+void gd_pack_sysex(const uint8_t *message, size_t bytes); /* Routing-Task: nur kopieren */
+void gd_pack_poll(void);                                  /* Control-Task */
 
 #endif

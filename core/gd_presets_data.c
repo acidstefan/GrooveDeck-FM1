@@ -1,6 +1,7 @@
 /* AUTOMATISCH ERZEUGT von tools/gen_presets_c.py aus GrooveDeck Source/Presets.h und ChannelPresets.h.
    Nicht von Hand aendern. Format siehe core/gd_preset.c. */
 #include "gd_preset.h"
+#if !GD_PRESETS_MINI   /* FM-1 (FM1 Open): kleiner Satz in gd_presets_mini.c, Rest als Paket im Flash */
 
 const int gd_num_genres = 22;
 const char *const gd_genre_names[] = { "Techno", "House", "Deep House", "Acid", "Trance", "Drum & Bass", "Breakbeat", "Hip-Hop", "Trap", "Electro", "Dub / Reggae", "Ambient / Downtempo", "Disco / Funk", "Synthwave / Italo", "Dubstep / Bass", "Pop / Synth-Pop", "Industrial / EBM", "Garage / 2-Step", "Minimal", "Hard Dance", "Afro / Latin", "Psytrance" };
@@ -8994,3 +8995,5 @@ const uint8_t gd_preset_blob[] = {
     7,5,104,16,7,6,32,28,7,9,220,5,7,32,128,12,7,2,232,3,7,46,0,192,
     0,
 };
+const unsigned gd_preset_blob_packed = 0;
+#endif
