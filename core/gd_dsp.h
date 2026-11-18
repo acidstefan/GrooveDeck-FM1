@@ -114,7 +114,13 @@ typedef struct {
     uint32_t activity; /* Bit je Part: Note seit letztem Abholen */
 } gd_engine;
 
+#ifndef GD_BLK
+#ifdef GD_TARGET_FM1
+#define GD_BLK 16   /* = Sequencer-Raster; kleinere Bus-Puffer fuer die Zwei-Kern-Pipeline */
+#else
 #define GD_BLK 32
+#endif
+#endif
 typedef struct { float b[4][2][GD_BLK]; int c; } gd_bus; /* Bus 0 trocken, 1-3 FX-Sends */
 
 /* Standardwerte wie GrooveDeckProcessor::resetPatch (masterVol bleibt erhalten) */

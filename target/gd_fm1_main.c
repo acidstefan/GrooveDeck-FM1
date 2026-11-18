@@ -200,7 +200,9 @@ static void out_block(const float *l, const float *r)
 /* Zwei Kerne als Pipeline: gd_audio rechnet Sequencer und Stimmen in Bus-Bloecke zu 16 Samples (wie
    gd_seq_render), gd_master holt sie ab und rechnet FX, Soundgoodizer und Master. Das Betriebssystem verteilt
    beide Tasks auf die zwei Kerne; die Semaphoren takten sie. Ergebnis gleich wie gd_app_audio. */
-#define GD_VBUS 8
+/* 64 Bus-Bloecke = 1024 Samples (23 ms bei 44,1 kHz) Vorlauf: Wecken ueber Kerngrenzen kann bis zu einem
+   Betriebssystem-Tick dauern; mit nur wenigen Bloecken Vorlauf bremste das die Pipeline (Takt zu langsam). */
+#define GD_VBUS 64
 #define GD_VCHUNK 16
 static gd_bus vbus[GD_VBUS];
 static OS_SEM sem_full, sem_free;
