@@ -4,6 +4,7 @@
  * groove_screen_control laufend aus dem Control-Task; von dort kommen Tasten, Regler, MASTER, Akku und LEDs
  * (SDK-Panel-API), gezeichnet wird mit gd_ui_draw in 16-Zeilen-Streifen; der Ton wird hier vorausgerechnet. */
 #include "fm1.h"
+#include "fm1_engine_control.h"
 #include "fm1_device.h"
 #include "instrument.h"
 #include "gd_fm1open.h"
@@ -12,6 +13,15 @@
 
 gd_app gd_state;
 volatile int gd_ready;
+
+/* Build.ps1 verlangt diese Funktionen der Bibliothek im fertigen Abbild (Bluetooth, Stimmung, Projekt).
+   GrooveDeck ruft sie (noch) nicht auf; ohne Verweis entfernt der Linker sie. */
+static const void *const volatile keep_runtime[] = {
+    (const void *)fm1_ble_set_role, (const void *)fm1_ble_scan, (const void *)fm1_ble_connect,
+    (const void *)fm1_ble_disconnect, (const void *)fm1_ble_get_status, (const void *)fm1_ble_get_device,
+    (const void *)fm1_ble_forget_bonds, (const void *)fm1_bluetooth_configure, (const void *)fm1_bluetooth_get_status,
+    (const void *)groove_tuning_capture, (const void *)groove_tuning_apply, (const void *)groove_project_apply_edit, (const void *)fm1_engine_output_level,
+};
 
 /* ------------------------------------------------------------------ Audio
    Gerechnet wird im Control-Task (Programmcode im Flash, wie die uebrige App), nicht im Audio-Interrupt:
@@ -119,6 +129,7 @@ static void update_leds(uint32_t now)
 void groove_screen_init(void)
 {
     unsigned i;
+    for (i = 0; i < sizeof keep_runtime / sizeof keep_runtime[0]; ++i) if (!keep_runtime[i]) return;
     fm1_controls_init();
     fm1_screen_init();
     gd_app_init(&gd_state, (float)FM1_SAMPLE_RATE);
