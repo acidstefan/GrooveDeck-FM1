@@ -39,6 +39,10 @@
 #define GD_ENGINE_DIV 1
 #endif
 #define GD_ENGINE_FRAMES (GD_AUDIO_FRAMES / GD_ENGINE_DIV)
+/* GD_DUAL_CORE 1: Stimmen und Master-Kette in zwei Tasks (je ein Kern), build.py --single-core schaltet ab */
+#ifndef GD_DUAL_CORE
+#define GD_DUAL_CORE 1
+#endif
 #define GD_RING_BLOCKS 32            /* 32 x 1,45 ms = 46 ms Puffer (Reserve, solange das Display ueber SPI sendet) */
 
 const struct irq_info irq_info_table[] = { { -1, -1, -1 } };
@@ -48,6 +52,7 @@ const struct task_info task_info_table[] = {
     { "systimer", 14, 256, 0 },
     { "sys_timer", 9, 512, 128 },
     { "gd_audio", 20, 4096, 0 },
+    { "gd_master", 20, 4096, 0 },
     { "gd_ui", 8, 4096, 0 },
     { 0, 0, 0, 0, 0 },
 };
@@ -166,37 +171,92 @@ static inline float soft_clip(float x)
     }
 }
 
+/* Einen Engine-Block (GD_ENGINE_FRAMES) als DMA-Block in den Ring schreiben */
+static float out_pl, out_pr;   /* letztes Sample des vorigen Blocks (fuer GD_ENGINE_DIV 2) */
+static void out_block(const float *l, const float *r)
+{
+    int32_t *dst = ring[ring_w % GD_RING_BLOCKS];
+    /* Geraet: 24 Bit rechtsbuendig; Emulator gibt die Worte als 32 Bit aus -> linksbuendig */
+    const float full = GD_EMU ? 2147483392.0f : 8388607.0f;
+    int i;
+    for (i = 0; i < GD_AUDIO_FRAMES; ++i) {
+        float sl, sr;
+        if (GD_ENGINE_DIV == 1) { sl = l[i]; sr = r[i]; }
+        else if (i & 1) { sl = l[i >> 1]; sr = r[i >> 1]; }
+        else {
+            const int k = i >> 1;
+            sl = 0.5f * ((k ? l[k - 1] : out_pl) + l[k]);
+            sr = 0.5f * ((k ? r[k - 1] : out_pr) + r[k]);
+        }
+        dst[2 * i] = (int32_t)(gd_clampf(soft_clip(sl), -1.0f, 1.0f) * full);
+        dst[2 * i + 1] = (int32_t)(gd_clampf(soft_clip(sr), -1.0f, 1.0f) * full);
+    }
+    out_pl = l[GD_ENGINE_FRAMES - 1];
+    out_pr = r[GD_ENGINE_FRAMES - 1];
+    ring_w = ring_w + 1;
+}
+
+#if GD_DUAL_CORE
+/* Zwei Kerne als Pipeline: gd_audio rechnet Sequencer und Stimmen in Bus-Bloecke zu 16 Samples (wie
+   gd_seq_render), gd_master holt sie ab und rechnet FX, Soundgoodizer und Master. Das Betriebssystem verteilt
+   beide Tasks auf die zwei Kerne; die Semaphoren takten sie. Ergebnis gleich wie gd_app_audio. */
+#define GD_VBUS 8
+#define GD_VCHUNK 16
+static gd_bus vbus[GD_VBUS];
+static OS_SEM sem_full, sem_free;
+
+__attribute__((noinline, used))
+static void gd_audio_task(void *arg)
+{
+    unsigned w = 0;
+    (void)arg;
+    if (audio_start()) { for (;;) os_time_dly(100); }
+    for (;;) {
+        os_sem_pend(&sem_free, 0);
+        gd_app_audio_voices(&app, &vbus[w % GD_VBUS], GD_VCHUNK);
+        ++w;
+        os_sem_post(&sem_full);
+    }
+}
+
+__attribute__((noinline, used))
+static void gd_master_task(void *arg)
+{
+    float l[GD_ENGINE_FRAMES], r[GD_ENGINE_FRAMES];
+    unsigned rd = 0;
+    (void)arg;
+    for (;;) {
+        int k, i;
+        while (ring_w - ring_r >= GD_RING_BLOCKS) { wdt_clear(); os_time_dly(1); }
+        {
+            const uint32_t t0 = timer_get_ms();
+            for (k = 0; k < GD_ENGINE_FRAMES; k += GD_VCHUNK) {
+                os_sem_pend(&sem_full, 0);
+                for (i = 0; i < GD_VCHUNK; ++i) l[k + i] = r[k + i] = 0.0f;
+                gd_engine_render_master(&app.eng, &vbus[rd % GD_VBUS], l + k, r + k);
+                ++rd;
+                os_sem_post(&sem_free);
+            }
+            out_block(l, r);
+            {
+                const uint32_t dt = (timer_get_ms() - t0) * 1000u;
+                if (dt > gd_render_us_max) gd_render_us_max = dt;
+            }
+        }
+    }
+}
+#else
 __attribute__((noinline, used))
 static void gd_audio_task(void *arg)
 {
     float l[GD_ENGINE_FRAMES], r[GD_ENGINE_FRAMES];
-    float pl = 0.0f, pr = 0.0f;   /* letztes Sample des vorigen Blocks (fuer GD_ENGINE_DIV 2) */
     (void)arg;
     if (audio_start()) { for (;;) os_time_dly(100); }
     for (;;) {
         while (ring_w - ring_r < GD_RING_BLOCKS) {
-            int32_t *dst = ring[ring_w % GD_RING_BLOCKS];
             const uint32_t t0 = timer_get_ms();
-            int i;
             gd_app_audio(&app, l, r, GD_ENGINE_FRAMES);
-            {   /* Geraet: 24 Bit rechtsbuendig; Emulator gibt die Worte als 32 Bit aus -> linksbuendig */
-                const float full = GD_EMU ? 2147483392.0f : 8388607.0f;
-                for (i = 0; i < GD_AUDIO_FRAMES; ++i) {
-                    float sl, sr;
-                    if (GD_ENGINE_DIV == 1) { sl = l[i]; sr = r[i]; }
-                    else if (i & 1) { sl = l[i >> 1]; sr = r[i >> 1]; }
-                    else {
-                        const int k = i >> 1;
-                        sl = 0.5f * ((k ? l[k - 1] : pl) + l[k]);
-                        sr = 0.5f * ((k ? r[k - 1] : pr) + r[k]);
-                    }
-                    dst[2 * i] = (int32_t)(gd_clampf(soft_clip(sl), -1.0f, 1.0f) * full);
-                    dst[2 * i + 1] = (int32_t)(gd_clampf(soft_clip(sr), -1.0f, 1.0f) * full);
-                }
-                pl = l[GD_ENGINE_FRAMES - 1];
-                pr = r[GD_ENGINE_FRAMES - 1];
-            }
-            ring_w = ring_w + 1;
+            out_block(l, r);
             {
                 const uint32_t dt = (timer_get_ms() - t0) * 1000u;
                 if (dt > gd_render_us_max) gd_render_us_max = dt;
@@ -206,6 +266,7 @@ static void gd_audio_task(void *arg)
         os_time_dly(1);
     }
 }
+#endif
 
 /* --------------------------------------------------------------- Display */
 static uint16_t strip[16 * GD_LCD_W];
@@ -286,6 +347,68 @@ static void gd_volume_start(fm1_volume *s)
     GD_RD(0x13100u) = 0xf44eu; GD_CHG(0x13100u, 0, 0x10); GD_CHG(0x13100u, 0, 0x40);
 }
 
+/* ------------------------------------------------------------------ Tastenmatrix + LEDs
+   Abtastung wie fm1_wl82_keyscan_raw (fm1-nes, Apache-2.0, DMA-Betriebsart), zusaetzlich werden nach jeder
+   Latch-Flanke die vier LED-Leitungen fuer die jetzt gewaehlte Spalte gesetzt (PA9, PA10, PH6, PH9 = Zeilen 1-4,
+   Leitung high = LED an). Helligkeit per Sigma-Delta ueber die Abtastdurchlaeufe (etwa 1 kHz). */
+#define KS_PA 0x50000u
+#define KS_PB 0x50040u
+#define KS_PH 0x501c0u
+#define KS_SPI 0x11e00u
+#define KS_LATCH 2u
+static uint8_t led_grid[GD_LED_COLS][GD_LED_LINES];
+static uint16_t led_acc[GD_LED_COLS][GD_LED_LINES];
+__attribute__((aligned(64), used)) static uint8_t gd_key_dma[64];
+
+static void led_lines(int col)
+{
+    uint32_t a = 0, h = 0;
+    int l;
+    for (l = 0; l < GD_LED_LINES; ++l) {
+        uint16_t *acc = &led_acc[col][l];
+        *acc = (uint16_t)(*acc + led_grid[col][l]);
+        if (*acc >= 255u) {
+            *acc = (uint16_t)(*acc - 255u);
+            if (l == 0) a |= 1u << 9; else if (l == 1) a |= 1u << 10; else if (l == 2) h |= 1u << 6; else h |= 1u << 9;
+        }
+    }
+    GD_CHG(KS_PA, 0x600u, a);
+    GD_CHG(KS_PH, 0x240u, h);
+}
+
+static int ks_shift(uint16_t word)
+{
+    uint32_t start;
+    GD_RD(KS_SPI) = GD_RD(KS_SPI) | 0x4000u;
+    gd_key_dma[0] = (uint8_t)(word >> 8);
+    gd_key_dma[1] = (uint8_t)word;
+    __asm__ volatile("csync" ::: "memory");
+    GD_RD(KS_SPI + 12) = (uint32_t)(uintptr_t)gd_key_dma;
+    GD_RD(KS_SPI + 16) = 2;
+    GD_CHG(KS_PA, KS_LATCH, 0);              /* Latch erst nach dem Start der Uebertragung runter (wie Werk) */
+    start = now_us(0);
+    while (!(GD_RD(KS_SPI) & 0x8000u))
+        if ((uint32_t)(now_us(0) - start) >= 10000u) return -1;
+    GD_CHG(KS_SPI, 0, 0x4000u);
+    return 0;
+}
+
+static int gd_scan(uint8_t rows[FM1_STOCK_SCAN_ROWS])
+{
+    unsigned i;
+    for (i = 0; i < FM1_STOCK_SCAN_ROWS; ++i) {
+        uint16_t word;
+        rows[scanner.row] = fm1_stock_pack_columns(GD_RD(KS_PA + 4), GD_RD(KS_PB + 4));
+        GD_CHG(KS_PA, 0, KS_LATCH);          /* jetzt ist Spalte scanner.row gewaehlt */
+        led_lines(scanner.row);
+        if (++scanner.row == FM1_STOCK_SCAN_ROWS) scanner.row = 0;
+        word = (uint16_t)(0xffffu ^ (1u << scanner.row));
+        if (scanner.row < 2) word &= (uint16_t)~(0x800u << scanner.row);
+        if (ks_shift(word)) return -1;
+    }
+    return 0;
+}
+
 __attribute__((noinline, used))
 static void gd_ui_task(void *arg)
 {
@@ -299,7 +422,13 @@ static void gd_ui_task(void *arg)
     gd_volume_start(&volume);
     for (;;) {
         const uint32_t now = timer_get_ms();
-        if (scan_ok && fm1_wl82_keyscan_raw(&scanner, rows) == 0) gd_input_scan(&input, rows, &app);
+        if (scan_ok) {
+            uint8_t keys[GD_KEYS], btn[GB_COUNT], green;
+            gd_leds_compute(&app, now, keys, btn, &green);
+            gd_input_led_grid(keys, btn, green, led_grid);
+            if (gd_scan(rows) == 0) gd_input_scan(&input, rows, &app);
+            else scan_ok = 0;
+        }
         if (now - last_vol >= 2u) {
             last_vol = now;
             fm1_volume_tick(&volume);
@@ -323,6 +452,11 @@ void app_main(void)
 {
     gd_app_init(&app, (float)GD_SR / (float)GD_ENGINE_DIV);
     gd_input_init(&input);
+#if GD_DUAL_CORE
+    os_sem_create(&sem_free, GD_VBUS);
+    os_sem_create(&sem_full, 0);
+    task_create(gd_master_task, NULL, "gd_master");
+#endif
     task_create(gd_audio_task, NULL, "gd_audio");
     task_create(gd_ui_task, NULL, "gd_ui");
 }

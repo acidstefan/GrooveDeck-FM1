@@ -10,7 +10,7 @@ Umgebungsvariablen (wie bei fm1-nes):
   FM1_TOOLCHAIN_DIR  Ordner mit clang(.exe) und lto-wrapper  (Linux: .../jieli-linux-toolchains-*/pi32v2/bin,
                      Windows: C:/JL/pi32/bin)
 
-Aufruf:  python target/build.py [--out build] [--y-offset 0|40] [--lean] [--emu-light]
+Aufruf:  python target/build.py [--out build] [--y-offset 0|40] [--lean] [--emu-light] [--single-core]
 """
 import argparse
 import os
@@ -176,6 +176,8 @@ def main():
     ap.add_argument("--keyscan-pio", action="store_true",
                     help="Tastenmatrix wie fm1-nes-Standard per SPI2_BUF statt DMA (laeuft nicht im Emulator)")
     ap.add_argument("--lean", action="store_true", help="Spar-Einstellungen: Hall mono, Analyse halbe Rate, 4 Stimmen")
+    ap.add_argument("--single-core", action="store_true",
+                    help="Klangberechnung in einem Task (ohne Aufteilung auf zwei Kerne)")
     ap.add_argument("--emu-light", action="store_true",
                     help="nur fuer langsame PCs im Emulator: wie --lean, Engine zusaetzlich mit halber Abtastrate (dumpfer)")
     a = ap.parse_args()
@@ -219,6 +221,8 @@ def main():
         defines += ["-DFM1_KEYSCAN_DMA2=1"]
     if a.lean or a.emu_light:
         defines += ["-DGD_REVERB_STEREO=0", "-DGD_GOOD_FULLRATE=0", "-DGD_MAX_VOICES=4"]
+    if a.single_core:
+        defines += ["-DGD_DUAL_CORE=0"]
     if a.emu_light:
         defines += ["-DGD_ENGINE_DIV=2"]
         print("Hinweis: --emu-light rechnet mit 22,05 kHz - nur zum Testen im Emulator, nicht fuers Geraet")
@@ -235,7 +239,7 @@ def main():
     for src, name in ((sdk / "cpu/wl82/sdk_ld.c", "sdk.ld"), (sdk / "cpu/wl82/sdk_used_list.c", "sdk.used")):
         run([clang, *flags, *defines, *includes, "-D__LD__", "-E", "-P", src, "-o", out / name])
     used = out / "sdk.used"
-    used.write_text(used.read_text() + "\nmemory_init\n__wrap_boot_info_init\ngd_initcall_noop\ngd_emu_flag\ngd_alnk_direct_isr\ngd_audio_task\ngd_ui_task\ngd_alink_isr\nfm1_display_snapshot\ngd_emu_tramp\n")
+    used.write_text(used.read_text() + "\nmemory_init\n__wrap_boot_info_init\ngd_initcall_noop\ngd_emu_flag\ngd_alnk_direct_isr\ngd_audio_task\ngd_master_task\ngd_ui_task\ngd_alink_isr\nfm1_display_snapshot\ngd_emu_tramp\n")
     ld = (out / "sdk.ld").read_text()
     ld = ld.replace("*(.data)", "*(.data .data.*)", 1).replace("*(.bss)", "*(.bss .bss.*)", 1)
     # wie fm1-nes: keine automatische Reparatur der Flash-Konfiguration beim Start

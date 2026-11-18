@@ -240,6 +240,33 @@ static void test_step_keys(void)
     }
 }
 
+/* Zwei-Kern-Pfad (Stimmen in 16er-Bus-Bloecken, Master getrennt) muss genau gd_app_audio entsprechen */
+static void test_pipeline(void)
+{
+    enum { NB = 2000 };
+    static float ref[NB][64];
+    float l[64], r[64];
+    gd_bus bus;
+    int pass, blk, i, k, same = 1;
+    for (pass = 0; pass < 2; ++pass) {
+        gd_app_init(&app, 44100.0f);
+        gd_app_post_button(&app, GB_PLAY, 1); gd_app_post_button(&app, GB_PLAY, 0);
+        for (blk = 0; blk < NB; ++blk) {
+            if (pass == 0) gd_app_audio(&app, l, r, 64);
+            else for (k = 0; k < 64; k += 16) {
+                for (i = 0; i < 16; ++i) l[k + i] = r[k + i] = 0.0f;
+                gd_app_audio_voices(&app, &bus, 16);
+                gd_engine_render_master(&app.eng, &bus, l + k, r + k);
+            }
+            for (i = 0; i < 64; ++i) {
+                if (pass == 0) ref[blk][i] = l[i] + r[i];
+                else if (ref[blk][i] != l[i] + r[i]) same = 0;
+            }
+        }
+    }
+    CHECK(same, "Zwei-Kern-Pfad weicht von gd_app_audio ab");
+}
+
 int main(void)
 {
     test_math();
@@ -249,6 +276,7 @@ int main(void)
     test_presets_load();
     test_midi_leds();
     test_step_keys();
+    test_pipeline();
     if (fails) { printf("%d Test(s) fehlgeschlagen\n", fails); return 1; }
     printf("Alle Tests bestanden\n");
     return 0;

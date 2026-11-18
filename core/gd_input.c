@@ -81,3 +81,20 @@ void gd_input_master(gd_input *in, int raw, gd_app *app)
     in->master = (uint16_t)v;
     gd_app_post_master(app, (float)v / 1000.0f);
 }
+
+static void put(uint8_t grid[GD_LED_COLS][GD_LED_LINES], uint8_t cell, uint8_t v)
+{
+    /* rows[]-Index = 595-Spalte + 1 (Abtast-Pipeline: rows[0] gehoert zu Spalte 10) */
+    const int col = ((cell >> 4) + GD_LED_COLS - 1) % GD_LED_COLS, line = (cell & 15) - 1;
+    if (col >= 0 && col < GD_LED_COLS && line >= 0 && line < GD_LED_LINES) grid[col][line] = v;
+}
+
+void gd_input_led_grid(const uint8_t keys[GD_KEYS], const uint8_t btn[GB_COUNT], uint8_t playGreen,
+                       uint8_t grid[GD_LED_COLS][GD_LED_LINES])
+{
+    int i;
+    memset(grid, 0, GD_LED_COLS * GD_LED_LINES);
+    for (i = 0; i < 14; ++i) put(grid, k_cells[i], btn[k_btn[i]]);
+    for (i = 0; i < GD_KEYS; ++i) put(grid, k_cells[14 + i], keys[i]);
+    put(grid, 0x91, playGreen);   /* gruene PLAY-LED: eigene Leitung (Spalte 8, Zeile 1) */
+}
