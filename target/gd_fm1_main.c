@@ -530,8 +530,9 @@ static void gd_ui_task(void *arg)
         }
         gd_app_tick(&app, (int)(now - last_tick));
         last_tick = now;
-        /* neu zeichnen bei Aenderung oder Step-Wechsel, hoechstens 20 Bilder/s (das Display wartet aktiv) */
-        if ((app.uiStamp != drawn || app.seq.currentStep != step) && now - last_draw >= 50u) {
+        /* neu zeichnen bei Aenderung oder Step-Wechsel, hoechstens 20 Bilder/s (das Display wartet aktiv);
+           im Emulator 10 Bilder/s, dort kostet jedes Bild den PC viel Rechenzeit */
+        if ((app.uiStamp != drawn || app.seq.currentStep != step) && now - last_draw >= (GD_EMU ? 100u : 50u)) {
             drawn = app.uiStamp;
             step = app.seq.currentStep;
             last_draw = now;
