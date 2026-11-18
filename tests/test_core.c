@@ -221,23 +221,15 @@ static void test_step_keys(void)
         run_audio(&app, 1);
         CHECK(app.seq.pat.stepMask[0] == (before ^ ((uint64_t)1 << 5)), "STEP: weisse Taste 6 schaltet Step 6 nicht");
     }
-    app.seq.pat.patLen = 32;
-    app.part = GD_KBD1;
-    {
-        const int n0 = app.lastNote[0];
-        gd_app_post_key(&app, gd_black_key(BK_PAGE2), 1);
-        gd_app_post_key(&app, gd_black_key(BK_NOTEUP), 1);
-        gd_app_post_key(&app, gd_black_key(BK_OCTUP), 1);
-        gd_app_post_key(&app, gd_white_key(0), 1);
-        run_audio(&app, 1);
-        CHECK(app.stepPage == 1, "STEP: schwarze Taste 2 waehlt Seite 2 nicht");
-        CHECK(app.lastNote[0] == n0 + 13, "STEP: Step-Note +1/+12 falsch");
-        CHECK(((app.seq.pat.stepMask[GD_KBD1] >> 16) & 1u) && app.seq.pat.kbdNote[0][16] == n0 + 13,
-              "STEP: Bass-Step 17 nicht mit Step-Note gesetzt");
-        gd_app_post_key(&app, gd_black_key(BK_MODE), 1);
-        run_audio(&app, 1);
-        CHECK(app.stepMode == 0, "STEP: schwarze Taste 11 schaltet nicht auf PLAY");
-    }
+    /* schwarze Taste 10 = Bass waehlen; OCT- + OCT+ gehalten + schwarze Taste 1 = BD stumm */
+    gd_app_post_key(&app, gd_black_key(9), 1);
+    gd_app_post_button(&app, GB_OCTDN, 1); gd_app_post_button(&app, GB_OCTUP, 1);
+    gd_app_post_key(&app, gd_black_key(0), 1);
+    gd_app_post_button(&app, GB_OCTUP, 0); gd_app_post_button(&app, GB_OCTDN, 0);
+    run_audio(&app, 1);
+    CHECK(app.part == GD_KBD1, "STEP: schwarze Taste 10 waehlt Bass nicht");
+    CHECK((app.seq.muteMask & 1u) != 0, "STEP: OCT-+OCT+ + schwarze Taste 1 schaltet BD nicht stumm");
+    CHECK(app.octave == 0 && app.part == GD_KBD1, "STEP: Mute-Kombination hat anderes veraendert");
 }
 
 /* Zwei-Kern-Pfad (Stimmen in 16er-Bus-Bloecken, Master getrennt) muss genau gd_app_audio entsprechen */

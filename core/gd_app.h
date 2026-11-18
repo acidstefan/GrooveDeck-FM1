@@ -43,8 +43,7 @@ static inline int gd_black_key(int idx)   /* Tastennummer der schwarzen Taste id
     static const signed char k[5] = { 1, 3, 5, 8, 10 };
     return (idx / 5) * 12 + k[idx % 5];
 }
-/* STEP-Modus: Funktionen der schwarzen Tasten */
-enum { BK_PAGE1 = 0, BK_PAGE2, BK_PAGE3, BK_PAGE4, BK_NOTEDN, BK_NOTEUP, BK_OCTDN, BK_OCTUP, BK_PARTDN, BK_PARTUP, BK_MODE };
+/* STEP-Modus: schwarze Tasten 1-11 = Kanaele BD SD TM PC CP CH OH CY C2 BS LD (mit OCT- + OCT+ gehalten: Mute) */
 
 enum { PG_HOME = 0, PG_ENV, PG_LFO, PG_EDIT, PG_FX, PG_GLO, PG_ARP, PG_SEL, PG_COUNT };
 
@@ -76,6 +75,7 @@ typedef struct {
     uint32_t audioMs, btnDownMs[GB_COUNT];
     int holdDone[GB_COUNT], comboUsed[GB_COUNT];
     int dirty, transpose;
+    int octMuteUsed;              /* OCT- + OCT+ gehalten: schon eine Mute-Taste benutzt */
     int flashMs[GD_PARTS];        /* Aufblitzen der Tasten-LEDs beim Ausloesen eines Drums */
     /* MIDI-Eingang (TRS-Buchse, USB): externe Clock */
     int extClock, clockCount;

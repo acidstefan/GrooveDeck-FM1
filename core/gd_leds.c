@@ -30,8 +30,16 @@ void gd_leds_compute(const gd_app *a, uint32_t now, uint8_t keys[GD_KEYS], uint8
             else if (!on && st < pl && (k & 3) == 0) v = 8; /* Zaehlzeit schwach markiert */
             keys[gd_white_key(k)] = v;
         }
-        /* schwarze Tasten 1-4: Step-Seiten (aktuelle hell, vorhandene schwach) */
-        for (p = 0; p < pages && p < 4; ++p) keys[gd_black_key(BK_PAGE1 + p)] = p == a->stepPage ? L_ON : L_DIM;
+        /* schwarze Tasten: Kanaele - gewaehlter hell (stumm: blinkt), stumme aus, uebrige schwach */
+        {
+            static const int chan[11] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, GD_KBD1, GD_KBD2 };
+            for (p = 0; p < 11; ++p) {
+                const int muted = (int)((s->muteMask >> chan[p]) & 1u);
+                uint8_t v = muted ? L_OFF : L_DIM;
+                if (chan[p] == part) v = muted ? blink(now, 600u, L_ON, L_OFF) : L_ON;
+                keys[gd_black_key(p)] = v;
+            }
+        }
     } else if (kbd) {
         /* PLAY, Bass/Lead: klingende Noten (auch vom Arpeggiator und Sequencer) */
         const gd_part *P = &a->eng.parts[part];

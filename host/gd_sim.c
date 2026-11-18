@@ -157,7 +157,7 @@ int main(int argc, char **argv)
     btn(GB_SEQ); enc(GE_SELECT, -11); run(0.05); /* zurueck auf BD, STEP */
     key(gd_white_key(2), 0.05); key(gd_white_key(6), 0.05); key(gd_white_key(10), 0.05);  /* Steps 3, 7, 11 */
     btn(GB_GLO); enc(GE_K2, 16); run(0.05);   /* Laenge 32 */
-    key(gd_black_key(BK_PAGE2), 0.05); run(1.0);
+    btn(GB_OCTUP); run(1.0);
     shot("07_glo_page2");
     btn(GB_FX); run(0.5); shot("08_fx");
     btn(GB_SEL); enc(GE_K1, 3); run(0.8); shot("09_kanal_preset");

@@ -2,7 +2,7 @@
    Drehreglern und MASTER. Laeuft mit derselben Kern-Software wie die Firmware (gd_app), aber nativ am PC:
    voller Klang in Echtzeit, ohne Emulator. Zoom stufenlos.
 
-   Bedienung
+   Bedienung (STEP-Modus: weisse Tasten = Steps, schwarze = Kanaele; OCT- + OCT+ halten + schwarze Taste = Mute)
      Maus      Tasten/Buttons anklicken (halten = gedrueckt halten), Regler: Mausrad darueber oder ziehen
      Tastatur  Klaviatur: weisse Tasten Z X C V B N M , . / Q W E R T Y, schwarze darueber (S D F H J L ; ' 3 4 6)
                F1 FX  F2 SEL  F3 ENV  F4 LFO  F5 EDIT  F6 GLO  F7 HOME  F8 SAVE  F9 ARP  F10 SEQ
@@ -180,10 +180,9 @@ static void draw_panel(uint32_t nowMs)
                 char n[4];
                 snprintf(n, sizeof n, "%d", gd_key_white(c->id) + 1);
                 text_c(r.x + r.w / 2, r.y + r.h - 60, n, 2, rgb(120, 122, 130));
-            } else {
-                char n[4];
-                snprintf(n, sizeof n, "%d", gd_key_black(c->id) + 1);
-                text_c(r.x + r.w / 2, r.y + 14, n, 2, rgb(150, 152, 160));
+            } else {   /* STEP-Modus: schwarze Tasten = Kanaele */
+                static const char *cn[11] = { "BD", "SD", "TM", "PC", "CP", "CH", "OH", "CY", "C2", "BS", "LD" };
+                text_c(r.x + r.w / 2, r.y + 14, cn[gd_key_black(c->id)], 2, rgb(150, 152, 160));
             }
         } else {
             const int cx = r.x + r.w / 2, cy = r.y + r.h / 2, rad = r.w / 2;

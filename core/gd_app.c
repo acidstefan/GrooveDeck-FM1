@@ -194,19 +194,10 @@ static void set_step(gd_app *a, int part, int step, int on, int note)
 
 static void select_part(gd_app *a, int delta);
 
-static void note_msg(gd_app *a, int note)
-{
-    static const char *nm[12] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
-    char b[24];
-    snprintf(b, sizeof b, "Step-Note: %s%d", nm[note % 12], note / 12 - 1);
-    message(a, b);
-}
-
-/* STEP-Modus: weisse Tasten = 16 Steps der aktuellen Seite, schwarze Tasten = Zusatzfunktionen */
+/* STEP-Modus: weisse Tasten = 16 Steps der aktuellen Seite, schwarze Tasten = Kanaele (OCT- + OCT+ halten: Mute) */
 static void step_key(gd_app *a, int key)
 {
     const int part = a->part, w = gd_key_white(key), bk = gd_key_black(key);
-    const int pages = (a->seq.pat.patLen + 15) / 16;
     if (w >= 0) {
         const int step = a->stepPage * 16 + w;
         if (step < a->seq.pat.patLen) {
@@ -215,27 +206,21 @@ static void step_key(gd_app *a, int key)
         }
         return;
     }
-    switch (bk) {
-        case BK_PAGE1: case BK_PAGE2: case BK_PAGE3: case BK_PAGE4:
-            if (bk < pages) {
-                char b[24];
-                a->stepPage = bk;
-                snprintf(b, sizeof b, "Steps %d-%d", bk * 16 + 1, bk * 16 + 16);
-                message(a, b);
-            } else message(a, "Seite nicht vorhanden (GLO: Laenge)");
-            break;
-        case BK_NOTEDN: case BK_NOTEUP: case BK_OCTDN: case BK_OCTUP:
-            if (gd_is_kbd(part)) {
-                static const int d[4] = { -1, 1, -12, 12 };
-                int *n = &a->lastNote[part - GD_KBD1];
-                *n = gd_clampi(*n + d[bk - BK_NOTEDN], 0, 127);
-                note_msg(a, *n);
-            } else message(a, "Step-Note nur bei Bass/Lead");
-            break;
-        case BK_PARTDN: select_part(a, -1); message(a, gd_part_short(a->part)); break;
-        case BK_PARTUP: select_part(a, 1); message(a, gd_part_short(a->part)); break;
-        case BK_MODE: a->stepMode = 0; message(a, "PLAY: Tasten = Noten"); break;
-        default: break;
+    if (bk >= 0) {
+        /* schwarze Tasten = Kanaele: Drums 1-9, Bass, Lead. OCT- und OCT+ gehalten: Kanal stumm/an */
+        static const int chan[11] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, GD_KBD1, GD_KBD2 };
+        const int p = chan[bk];
+        if (a->btnDown[GB_OCTDN] && a->btnDown[GB_OCTUP]) {
+            char m[32];
+            a->seq.muteMask ^= (uint16_t)(1u << p);
+            a->octMuteUsed = 1;
+            snprintf(m, sizeof m, "%s %s", gd_part_short(p), ((a->seq.muteMask >> p) & 1u) ? "stumm" : "an");
+            message(a, m);
+        } else {
+            a->part = p;
+            if (a->page == PG_ARP && !gd_is_kbd(p)) a->page = PG_HOME;
+            message(a, gd_part_short(p));
+        }
     }
 }
 
@@ -334,9 +319,19 @@ static void button_event(gd_app *a, int b, int down)
             const int d = b == GB_OCTUP ? 1 : -1;
             const int other = b == GB_OCTUP ? GB_OCTDN : GB_OCTUP;
             if (down && a->btnDown[other]) {
-                a->octave = 0; a->transpose = 0; a->stepPage = 0;
+                /* beide gehalten: im STEP-Modus schalten die schwarzen Tasten jetzt Mute; ohne Taste beim
+                   Loslassen: Oktave und Transpose auf 0 */
                 a->comboUsed[GB_OCTDN] = a->comboUsed[GB_OCTUP] = 1;
-                message(a, "Oktave und Transpose 0");
+                a->octMuteUsed = 0;
+                if (a->stepMode) message(a, "Schwarze Taste: Kanal stumm/an");
+                break;
+            }
+            if (!down && a->btnDown[other] && a->comboUsed[b]) {   /* erste der beiden losgelassen */
+                if (!a->octMuteUsed) {
+                    a->octave = 0; a->transpose = 0; a->stepPage = 0;
+                    message(a, "Oktave und Transpose 0");
+                }
+                a->octMuteUsed = 1;   /* nur einmal */
                 break;
             }
             if (down || a->comboUsed[b]) break;

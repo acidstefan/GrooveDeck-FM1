@@ -89,7 +89,7 @@ Die Klaviatur hat 27 Tasten: unten 16 weiße, oben 11 schwarze. SEQ schaltet zwi
 | Modus | Tasten | LEDs |
 |---|---|---|
 | STEP | weiße Tasten 1–16: Step an/aus auf der aktuellen Seite (Bass/Lead mit der Step-Note); es klingt nichts | Steps an; laufender Step blinkt; Zählzeiten schwach |
-| STEP | schwarze Tasten: 1–4 Step-Seite 1–4 · 5/6 Step-Note −/+ Halbton · 7/8 Step-Note −/+ Oktave · 9/10 Kanal zurück/vor · 11 auf PLAY umschalten | schwarze 1–4: vorhandene Seiten schwach, aktuelle hell |
+| STEP | schwarze Tasten 1–11: Kanal wählen (BD SD TM PC CP CH OH CY C2 BS LD) · mit OCT− und OCT+ gehalten: Kanal stumm/an · Step-Seiten mit OCT−/OCT+ | gewählter Kanal hell (stumm: blinkt), stumme aus, übrige schwach |
 | PLAY, Drums | 1–9 (von links, chromatisch): die neun Drums (Fingerdrumming) | Taste blitzt beim Auslösen des Drums auf, auch vom Sequencer |
 | PLAY, Bass/Lead | chromatisch (Oktave/Transpose), über Arp/Chord, falls an; die zuletzt gespielte Note wird Step-Note | alle klingenden Töne, auch vom Arpeggiator und Sequencer |
 
