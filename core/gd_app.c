@@ -137,6 +137,48 @@ static void param_change(gd_app *a, const gd_pdesc *d, int delta)
     }
 }
 
+/* ------------------------------------------------------------- MIDI-Ausgang */
+static void mo_put(gd_app *a, int n, int b0, int b1, int b2)
+{
+    const uint8_t b[3] = { (uint8_t)b0, (uint8_t)b1, (uint8_t)b2 };
+    int i;
+    if ((unsigned)(a->moW - a->moR) + (unsigned)n > sizeof a->midiOut) return;   /* voll: verwerfen */
+    for (i = 0; i < n; ++i) { a->midiOut[a->moW % sizeof a->midiOut] = b[i]; a->moW = a->moW + 1u; }
+}
+
+int gd_app_midi_out_read(gd_app *a, uint8_t *dst, int cap)
+{
+    int n = 0;
+    while (n < cap && a->moR != a->moW) { dst[n++] = a->midiOut[a->moR % sizeof a->midiOut]; a->moR = a->moR + 1u; }
+    return n;
+}
+
+/* Kanaele wie beim MIDI-Eingang: Drums Kanal 10 (GM-Noten), Bass Kanal 1, Lead Kanal 2 */
+static void mo_note(gd_app *a, int part, int note, int vel, int on)
+{
+    static const uint8_t gm[9] = { 36, 38, 45, 37, 39, 42, 46, 49, 51 };
+    int ch;
+    if (part == GD_KBD1) ch = 0;
+    else if (part == GD_KBD2) ch = 1;
+    else if (part >= 0 && part < 9) { ch = 9; note = gm[part]; }
+    else return;
+    mo_put(a, 3, (on ? 0x90 : 0x80) | ch, note & 127, on ? (vel & 127) : 0);
+}
+
+/* nach jedem Audio-Block: Start/Stop und 24 Clocks je Viertel, solange intern getaktet wird */
+static void mo_clock(gd_app *a, int n)
+{
+    if (a->extClock) { a->moPlaying = a->seq.playing; return; }
+    if (a->seq.playing != a->moPlaying) {
+        a->moPlaying = a->seq.playing;
+        mo_put(a, 1, a->moPlaying ? 0xFA : 0xFC, 0, 0);
+        a->moClock = a->moPlaying ? 1.0f : 0.0f;   /* erste Clock gleich nach Start */
+    }
+    if (!a->moPlaying) return;
+    a->moClock += a->eng.bpm * 24.0f / (60.0f * a->eng.sr) * (float)n;
+    while (a->moClock >= 1.0f) { mo_put(a, 1, 0xF8, 0, 0); a->moClock -= 1.0f; }
+}
+
 /* ------------------------------------------------------------- Tastatur */
 static int is_ui_part(int p) { return p <= 8 || p == GD_ACCENT || p == GD_KBD1 || p == GD_KBD2; }
 
@@ -219,6 +261,7 @@ static void key_event(gd_app *a, int key, int down)
         a->keyNote[key] = note;
         a->keyPart[key] = p;
         gd_seq_key(&a->seq, p, note, 100, 1);
+        mo_note(a, p, note, 100, 1);
         if (a->rec && a->seq.playing) {                  /* Live-Aufnahme: auf den naechsten Step quantisieren */
             const int pl = a->seq.pat.patLen;
             int step = gd_roundi(a->seq.beat * 4.0f) % pl;
@@ -227,6 +270,7 @@ static void key_event(gd_app *a, int key, int down)
         }
     } else if (a->keyPart[key] >= 0) {
         gd_seq_key(&a->seq, a->keyPart[key], a->keyNote[key], 0, 0);
+        mo_note(a, a->keyPart[key], a->keyNote[key], 0, 0);
         a->keyPart[key] = -1;
     }
 }
@@ -505,6 +549,7 @@ void gd_app_audio(gd_app *a, float *l, float *r, int n)
     apply_events(a);
     for (i = 0; i < n; ++i) l[i] = r[i] = 0.0f;
     gd_seq_render(&a->seq, l, r, n);
+    mo_clock(a, n);
     advance(a, n);
     if (a->seq.currentStep != step) ++a->uiStamp;
 }
@@ -523,6 +568,7 @@ void gd_app_audio_voices(gd_app *a, gd_bus *bus, int n)
     if (s->playing) { e->beatPos = s->beat; s->beat += bps * (float)n; } else s->beat = 0.0f;
     gd_seq_wrap(s);
     gd_engine_render_voices(e, bus, n);
+    mo_clock(a, n);
     advance(a, n);
     if (s->currentStep != step) ++a->uiStamp;
 }

@@ -80,6 +80,12 @@ typedef struct {
     /* MIDI-Eingang (TRS-Buchse, USB): externe Clock */
     int extClock, clockCount;
     uint32_t clockT0Ms, lastClockMs;
+    /* MIDI-Ausgang (TRS-Buchse): Clock/Start/Stop als Master, live gespielte Noten. Ein Schreiber (Audio-Task),
+       ein Leser (Plattform, gd_app_midi_out_read). */
+    uint8_t midiOut[256];
+    volatile unsigned moW, moR;
+    int moPlaying;
+    float moClock;
     /* Akku (von der Plattform gemeldet): -1 = unbekannt */
     int battery, charging;
 } gd_app;
@@ -93,6 +99,8 @@ void gd_app_post_master(gd_app *a, float v01);
 /* MIDI-Bytes einspeisen (UART der TRS-Buchse, USB-MIDI). Mehrere Quellen brauchen je einen eigenen Parser. */
 typedef struct { uint8_t status, d0, n, sysex; } gd_midi;
 void gd_midi_byte(gd_midi *m, gd_app *a, uint8_t byte);
+/* Ausgehende MIDI-Bytes abholen (hoechstens cap), Rueckgabe = Anzahl */
+int gd_app_midi_out_read(gd_app *a, uint8_t *dst, int cap);
 /* Akkustand 0..100 (-1 = unbekannt), laedt = 1 waehrend USB-Strom anliegt */
 void gd_app_set_battery(gd_app *a, int percent, int charging);
 /* LED-Helligkeiten 0..255 fuer den aktuellen Zustand (Bedien-Task, ca. alle 10 ms).
