@@ -19,38 +19,27 @@ jobs:
         with:
           path: GrooveDeck-FM1
 
-      - name: Code::Blocks (verlangt der JieLi-Installer)
-        shell: pwsh
-        run: |
-          choco install codeblocks -y --no-progress
-          $cb = Get-ChildItem 'C:\Program Files*\CodeBlocks\codeblocks.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
-          if (!$cb) { throw 'Code::Blocks nicht gefunden' }
-          Write-Host "Code::Blocks: $($cb.FullName)"
-          # einmal starten und schliessen (legt die Benutzer-Einstellungen an)
-          $p = Start-Process -FilePath $cb.FullName -PassThru
-          Start-Sleep -Seconds 20
-          Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
-          Get-ChildItem "$env:APPDATA\CodeBlocks" -ErrorAction SilentlyContinue | Format-Table Name
-
-      - name: JieLi-Toolchain 2.5.3
+      - name: JieLi-Toolchain 2.5.3 (Installer entpacken statt ausfuehren)
         shell: pwsh
         run: |
           $exe = "$env:RUNNER_TEMP\jl-2.5.3.exe"
           curl.exe --fail --location --retry 5 --retry-delay 10 --output $exe https://jl-update.oss-cn-shenzhen.aliyuncs.com/2.5.3.exe
-          Write-Host ("Installer: {0:N0} Byte" -f (Get-Item $exe).Length)
-          # Installer-Typ unbekannt: zuerst NSIS (/S), dann Inno Setup (/VERYSILENT)
-          foreach ($args in @(@('/S','/D=C:\JL'), @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/DIR=C:\JL'))) {
-            Write-Host "Versuch: $($args -join ' ')"
-            $p = Start-Process -FilePath $exe -ArgumentList $args -PassThru
-            if (!$p.WaitForExit(900000)) { Stop-Process -Id $p.Id -Force; Write-Host 'Zeitueberschreitung' }
-            Write-Host "Rueckgabe: $($p.ExitCode)"
-            $clang = Get-ChildItem C:\JL, "$env:LOCALAPPDATA", "$env:USERPROFILE" -Filter clang.exe -Recurse -ErrorAction SilentlyContinue |
+          Write-Host ("Installer: {0:N0} Byte, SHA256 {1}" -f (Get-Item $exe).Length, (Get-FileHash $exe).Hash)
+          $out = "$env:RUNNER_TEMP\jl"
+          & 7z l $exe | Select-Object -First 40
+          & 7z x $exe "-o$out" -y | Select-Object -Last 5
+          $clang = Get-ChildItem $out -Filter clang.exe -Recurse -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match '\\pi32\\bin\\clang\.exe$' } | Select-Object -First 1
+          if (!$clang) {
+            # verschachtelte Archive (z. B. pi32.7z / .zip) ebenfalls auspacken
+            Get-ChildItem $out -Recurse -Include *.7z,*.zip -ErrorAction SilentlyContinue | ForEach-Object {
+              Write-Host "Entpacke $($_.FullName)"; & 7z x $_.FullName "-o$($_.DirectoryName)" -y | Out-Null }
+            $clang = Get-ChildItem $out -Filter clang.exe -Recurse -ErrorAction SilentlyContinue |
               Where-Object { $_.FullName -match '\\pi32\\bin\\clang\.exe$' } | Select-Object -First 1
-            if ($clang) { break }
           }
           if (!$clang) {
-            Get-ChildItem C:\JL -Recurse -Depth 2 -ErrorAction SilentlyContinue | Select-Object -First 50 FullName
-            throw 'pi32\bin\clang.exe nicht gefunden'
+            Get-ChildItem $out -Recurse -Depth 3 -ErrorAction SilentlyContinue | Select-Object -First 80 FullName
+            throw 'pi32\bin\clang.exe nicht im Installer gefunden'
           }
           $pi32 = Split-Path (Split-Path $clang.FullName)
           Write-Host "Toolchain: $pi32"
