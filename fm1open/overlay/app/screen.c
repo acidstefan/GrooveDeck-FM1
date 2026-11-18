@@ -16,12 +16,12 @@ volatile int gd_ready;
 
 /* Build.ps1 verlangt diese Funktionen der Bibliothek im fertigen Abbild (Bluetooth, Stimmung, Projekt).
    GrooveDeck ruft sie (noch) nicht auf; ohne Verweis entfernt der Linker sie. */
-extern const void *const volatile gd_keep_native[71];
 static const void *const volatile keep_runtime[] = {
     (const void *)fm1_ble_set_role, (const void *)fm1_ble_scan, (const void *)fm1_ble_connect,
     (const void *)fm1_ble_disconnect, (const void *)fm1_ble_get_status, (const void *)fm1_ble_get_device,
     (const void *)fm1_ble_forget_bonds, (const void *)fm1_bluetooth_configure, (const void *)fm1_bluetooth_get_status,
     (const void *)groove_tuning_capture, (const void *)groove_tuning_apply, (const void *)groove_project_apply_edit, (const void *)fm1_engine_output_level,
+    (const void *)groove_audio_stats, /* haelt fm1_master_gain (SRAM-Pruefung) */
 };
 
 /* ------------------------------------------------------------------ Audio
@@ -131,7 +131,6 @@ void groove_screen_init(void)
 {
     unsigned i;
     for (i = 0; i < sizeof keep_runtime / sizeof keep_runtime[0]; ++i) if (!keep_runtime[i]) return;
-    for (i = 0; i < 71; ++i) if (!gd_keep_native[i]) return;
     fm1_controls_init();
     fm1_screen_init();
     gd_app_init(&gd_state, (float)FM1_SAMPLE_RATE);
