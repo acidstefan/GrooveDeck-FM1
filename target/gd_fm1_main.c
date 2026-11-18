@@ -65,7 +65,7 @@ static fm1_volume volume;
 /* ------------------------------------------------------------------ Audio */
 static int32_t ring[GD_RING_BLOCKS][GD_AUDIO_FRAMES * 2];
 static volatile unsigned ring_w, ring_r;
-volatile uint32_t gd_underruns, gd_audio_irqs, gd_render_us_max;
+volatile uint32_t gd_underruns, gd_audio_irqs, gd_render_us_max, gd_scan_errors;
 
 static void iis_output(void *ctx, u8 *data, int len, u8 channel)
 {
@@ -388,7 +388,10 @@ static int ks_shift(uint16_t word)
     GD_CHG(KS_PA, KS_LATCH, 0);              /* Latch erst nach dem Start der Uebertragung runter (wie Werk) */
     start = now_us(0);
     while (!(GD_RD(KS_SPI) & 0x8000u))
-        if ((uint32_t)(now_us(0) - start) >= 10000u) return -1;
+        if ((uint32_t)(now_us(0) - start) >= 20000u) {
+            if (GD_RD(KS_SPI) & 0x8000u) break;   /* inzwischen fertig (Task war nur verdraengt): zaehlt */
+            return -1;
+        }
     GD_CHG(KS_SPI, 0, 0x4000u);
     return 0;
 }
@@ -426,8 +429,10 @@ static void gd_ui_task(void *arg)
             uint8_t keys[GD_KEYS], btn[GB_COUNT], green;
             gd_leds_compute(&app, now, keys, btn, &green);
             gd_input_led_grid(keys, btn, green, led_grid);
+            /* Zeitueberschreitung (z. B. weil die Audio-Tasks den Bedien-Task verdraengt haben): diese Abtastung
+               verwerfen und beim naechsten Durchlauf weitermachen - nie dauerhaft abschalten */
             if (gd_scan(rows) == 0) gd_input_scan(&input, rows, &app);
-            else scan_ok = 0;
+            else ++gd_scan_errors;
         }
         if (now - last_vol >= 2u) {
             last_vol = now;
