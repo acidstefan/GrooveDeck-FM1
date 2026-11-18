@@ -11,6 +11,9 @@
  *   gd_audio (hohe Prioritaet): rechnet Bloecke zu 64 Frames in einen Ringpuffer; die ALINK-IRQ holt sie ab.
  *   gd_ui (niedrig): Tastenmatrix jede Millisekunde, Poti alle 2 ms, Display bei Aenderungen streifenweise.
  */
+#ifndef GD_FLASH_SAVE
+#define GD_FLASH_SAVE 0   /* build.py --flash-save schaltet ein (noch ungetestet) */
+#endif
 #include "app_config.h"
 #include "system/includes.h"
 #include "system/task.h"
@@ -18,6 +21,10 @@
 #include "system/sys_time.h"
 #include "asm/iis.h"
 #include "asm/wdt.h"
+#if GD_FLASH_SAVE
+#include "asm/sfc_norflash_api.h"
+#include "device/ioctl_cmds.h"
+#endif
 #include <string.h>
 
 #include "display_test.h"
@@ -270,6 +277,69 @@ static void gd_audio_task(void *arg)
 }
 #endif
 
+/* ------------------------------------------------------- Speichern im Flash
+   SAVE (gehalten) legt den Benutzerstand in den letzten 64 KB des Flash (zwei 4-KB-Sektoren), wie
+   sdram_config_save_flash.c im SDK: norflash_open, Sektor loeschen, norflash_write, mit norflash_origin_read
+   pruefen. Beim Start wird er gelesen und steht als Benutzerstand (SEL-Seite) bereit. */
+#if GD_FLASH_SAVE
+#define GD_SAVE_MAGIC 0x31534447u   /* "GDS1" */
+#define GD_SAVE_SECTORS 2u
+extern const char text_rodata_end[];
+static uint32_t flash_user_addr;     /* 0 = kein gueltiger Bereich */
+static uint8_t flash_buf[GD_SAVE_SECTORS * 4096u] __attribute__((aligned(4)));
+volatile uint32_t gd_flash_errors;
+
+static uint32_t sum32(const uint8_t *d, int n)
+{
+    uint32_t h = 2166136261u;
+    int i;
+    for (i = 0; i < n; ++i) h = (h ^ d[i]) * 16777619u;
+    return h;
+}
+
+static void flash_init(void)
+{
+    u32 cap = 0;
+    norflash_open(NULL, NULL, NULL);
+    norflash_ioctl(NULL, IOCTL_GET_CAPACITY, (u32)&cap);
+    if (cap < 0x40000u) return;
+    flash_user_addr = cap - 0x10000u;
+    /* nie in den Bereich des Programms schreiben: Ende von Code/Konstanten (Linker) + 64 KB Abstand fuer
+       die danach abgelegten Initialwerte */
+    if (cpu_addr2flash_addr((u32)(uintptr_t)text_rodata_end) + 0x10000u > flash_user_addr) flash_user_addr = 0;
+}
+
+static void flash_load_user(void)
+{
+    uint32_t hdr[4];
+    if (!flash_user_addr) return;
+    norflash_origin_read((u8 *)hdr, flash_user_addr, sizeof hdr);
+    if (hdr[0] != GD_SAVE_MAGIC || hdr[1] == 0 || hdr[1] > sizeof flash_buf - 16u) return;
+    norflash_origin_read(flash_buf, flash_user_addr + 16u, hdr[1]);
+    if (sum32(flash_buf, (int)hdr[1]) != hdr[2]) return;
+    gd_app_load_user(&app, flash_buf, (int)hdr[1]);
+}
+
+static int flash_save_hook(const uint8_t *data, int len)
+{
+    uint32_t *hdr = (uint32_t *)flash_buf;
+    uint32_t total, i;
+    static uint8_t check[256];
+    if (!flash_user_addr || len <= 0 || (uint32_t)len > sizeof flash_buf - 16u) { ++gd_flash_errors; return -1; }
+    hdr[0] = GD_SAVE_MAGIC; hdr[1] = (uint32_t)len; hdr[2] = sum32(data, len); hdr[3] = 0;
+    memcpy(flash_buf + 16, data, (size_t)len);
+    total = (16u + (uint32_t)len + 3u) & ~3u;
+    for (i = 0; i < GD_SAVE_SECTORS; ++i) norflash_ioctl(NULL, IOCTL_ERASE_SECTOR, flash_user_addr + i * 4096u);
+    norflash_write(NULL, flash_buf, total, flash_user_addr);
+    for (i = 0; i < total; i += sizeof check) {   /* zuruecklesen und vergleichen */
+        const uint32_t n = total - i < sizeof check ? total - i : sizeof check;
+        norflash_origin_read(check, flash_user_addr + i, n);
+        if (memcmp(check, flash_buf + i, n)) { ++gd_flash_errors; return -1; }
+    }
+    return 0;
+}
+#endif
+
 /* --------------------------------------------------------------- Display */
 static uint16_t strip[16 * GD_LCD_W];
 static uint8_t wire[16 * GD_LCD_W * 2];
@@ -459,6 +529,11 @@ void app_main(void)
 {
     gd_app_init(&app, (float)GD_SR / (float)GD_ENGINE_DIV);
     gd_input_init(&input);
+#if GD_FLASH_SAVE
+    flash_init();
+    flash_load_user();
+    app.save_hook = flash_save_hook;
+#endif
 #if GD_DUAL_CORE
     os_sem_create(&sem_free, GD_VBUS);
     os_sem_create(&sem_full, 0);

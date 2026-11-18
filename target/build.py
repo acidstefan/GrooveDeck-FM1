@@ -10,7 +10,7 @@ Umgebungsvariablen (wie bei fm1-nes):
   FM1_TOOLCHAIN_DIR  Ordner mit clang(.exe) und lto-wrapper  (Linux: .../jieli-linux-toolchains-*/pi32v2/bin,
                      Windows: C:/JL/pi32/bin)
 
-Aufruf:  python target/build.py [--out build] [--y-offset 0|40] [--lean] [--emu-light] [--single-core]
+Aufruf:  python target/build.py [--out build] [--y-offset 0|40] [--lean] [--emu-light] [--single-core] [--flash-save]
 """
 import argparse
 import os
@@ -176,6 +176,8 @@ def main():
     ap.add_argument("--keyscan-pio", action="store_true",
                     help="Tastenmatrix wie fm1-nes-Standard per SPI2_BUF statt DMA (laeuft nicht im Emulator)")
     ap.add_argument("--lean", action="store_true", help="Spar-Einstellungen: Hall mono, Analyse halbe Rate, 4 Stimmen")
+    ap.add_argument("--flash-save", action="store_true",
+                    help="SAVE dauerhaft ins Flash (letzte 64 KB); noch ungetestet")
     ap.add_argument("--single-core", action="store_true",
                     help="Klangberechnung in einem Task (ohne Aufteilung auf zwei Kerne)")
     ap.add_argument("--emu-light", action="store_true",
@@ -223,6 +225,8 @@ def main():
         defines += ["-DGD_REVERB_STEREO=0", "-DGD_GOOD_FULLRATE=0", "-DGD_MAX_VOICES=4"]
     if a.single_core:
         defines += ["-DGD_DUAL_CORE=0"]
+    if a.flash_save:
+        defines += ["-DGD_FLASH_SAVE=1"]
     if a.emu_light:
         defines += ["-DGD_ENGINE_DIV=2"]
         print("Hinweis: --emu-light rechnet mit 22,05 kHz - nur zum Testen im Emulator, nicht fuers Geraet")
