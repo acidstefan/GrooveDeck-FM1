@@ -33,6 +33,12 @@
 #endif
 #define GD_SR 44100
 #define GD_AUDIO_FRAMES 64           /* = eine DMA-Haelfte (512 Byte) */
+/* GD_ENGINE_DIV 2 (build.py --emu-light): Engine rechnet mit halber Abtastrate, Ausgabe wird linear auf 44,1 kHz
+   hochgerechnet. Halbiert die Rechenarbeit, klingt aber dumpfer - nur fuer langsame PCs im Emulator gedacht. */
+#ifndef GD_ENGINE_DIV
+#define GD_ENGINE_DIV 1
+#endif
+#define GD_ENGINE_FRAMES (GD_AUDIO_FRAMES / GD_ENGINE_DIV)
 #define GD_RING_BLOCKS 32            /* 32 x 1,45 ms = 46 ms Puffer (Reserve, solange das Display ueber SPI sendet) */
 
 const struct irq_info irq_info_table[] = { { -1, -1, -1 } };
@@ -151,7 +157,8 @@ static int audio_start(void)
 __attribute__((noinline, used))
 static void gd_audio_task(void *arg)
 {
-    float l[GD_AUDIO_FRAMES], r[GD_AUDIO_FRAMES];
+    float l[GD_ENGINE_FRAMES], r[GD_ENGINE_FRAMES];
+    float pl = 0.0f, pr = 0.0f;   /* letztes Sample des vorigen Blocks (fuer GD_ENGINE_DIV 2) */
     (void)arg;
     if (audio_start()) { for (;;) os_time_dly(100); }
     for (;;) {
@@ -159,13 +166,23 @@ static void gd_audio_task(void *arg)
             int32_t *dst = ring[ring_w % GD_RING_BLOCKS];
             const uint32_t t0 = timer_get_ms();
             int i;
-            gd_app_audio(&app, l, r, GD_AUDIO_FRAMES);
+            gd_app_audio(&app, l, r, GD_ENGINE_FRAMES);
             {   /* Geraet: 24 Bit rechtsbuendig; Emulator gibt die Worte als 32 Bit aus -> linksbuendig */
                 const float full = GD_EMU ? 2147483392.0f : 8388607.0f;
                 for (i = 0; i < GD_AUDIO_FRAMES; ++i) {
-                    dst[2 * i] = (int32_t)(gd_clampf(l[i], -1.0f, 1.0f) * full);
-                    dst[2 * i + 1] = (int32_t)(gd_clampf(r[i], -1.0f, 1.0f) * full);
+                    float sl, sr;
+                    if (GD_ENGINE_DIV == 1) { sl = l[i]; sr = r[i]; }
+                    else if (i & 1) { sl = l[i >> 1]; sr = r[i >> 1]; }
+                    else {
+                        const int k = i >> 1;
+                        sl = 0.5f * ((k ? l[k - 1] : pl) + l[k]);
+                        sr = 0.5f * ((k ? r[k - 1] : pr) + r[k]);
+                    }
+                    dst[2 * i] = (int32_t)(gd_clampf(sl, -1.0f, 1.0f) * full);
+                    dst[2 * i + 1] = (int32_t)(gd_clampf(sr, -1.0f, 1.0f) * full);
                 }
+                pl = l[GD_ENGINE_FRAMES - 1];
+                pr = r[GD_ENGINE_FRAMES - 1];
             }
             ring_w = ring_w + 1;
             {
@@ -292,7 +309,7 @@ static void gd_ui_task(void *arg)
 
 void app_main(void)
 {
-    gd_app_init(&app, (float)GD_SR);
+    gd_app_init(&app, (float)GD_SR / (float)GD_ENGINE_DIV);
     gd_input_init(&input);
     task_create(gd_audio_task, NULL, "gd_audio");
     task_create(gd_ui_task, NULL, "gd_ui");

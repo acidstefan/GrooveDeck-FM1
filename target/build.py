@@ -10,7 +10,7 @@ Umgebungsvariablen (wie bei fm1-nes):
   FM1_TOOLCHAIN_DIR  Ordner mit clang(.exe) und lto-wrapper  (Linux: .../jieli-linux-toolchains-*/pi32v2/bin,
                      Windows: C:/JL/pi32/bin)
 
-Aufruf:  python target/build.py [--out build] [--y-offset 0|40] [--lean]
+Aufruf:  python target/build.py [--out build] [--y-offset 0|40] [--lean] [--emu-light]
 """
 import argparse
 import os
@@ -176,6 +176,8 @@ def main():
     ap.add_argument("--keyscan-pio", action="store_true",
                     help="Tastenmatrix wie fm1-nes-Standard per SPI2_BUF statt DMA (laeuft nicht im Emulator)")
     ap.add_argument("--lean", action="store_true", help="Spar-Einstellungen: Hall mono, Analyse halbe Rate, 4 Stimmen")
+    ap.add_argument("--emu-light", action="store_true",
+                    help="nur fuer langsame PCs im Emulator: wie --lean, Engine zusaetzlich mit halber Abtastrate (dumpfer)")
     a = ap.parse_args()
 
     nes = Path(os.environ.get("FM1_NES_DIR", "")).resolve()
@@ -215,8 +217,11 @@ def main():
         # Tastenmatrix per SPI2-DMA wie die Original-Firmware (fm1-nes-Option); diese Betriebsart bildet der
         # fm1-emulator nach, die Einzelbyte-Uebertragung ueber SPI2_BUF nicht.
         defines += ["-DFM1_KEYSCAN_DMA2=1"]
-    if a.lean:
+    if a.lean or a.emu_light:
         defines += ["-DGD_REVERB_STEREO=0", "-DGD_GOOD_FULLRATE=0", "-DGD_MAX_VOICES=4"]
+    if a.emu_light:
+        defines += ["-DGD_ENGINE_DIV=2"]
+        print("Hinweis: --emu-light rechnet mit 22,05 kHz - nur zum Testen im Emulator, nicht fuers Geraet")
     includes = ["-I" + str(x) for x in (ROOT / "core", HERE, nb, nes / "firmware/nes/include", sdk / "apps/common")]
     includes += ["-I" + str((make.parent / x[2:]).resolve()) for x in make_list(text, "INCLUDES")]
 
