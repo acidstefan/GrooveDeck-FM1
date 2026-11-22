@@ -42,3 +42,8 @@ EXPORT void web_set_master(float v) { set_master(v); }
 EXPORT int web_find_white(int n) { return find(C_KEY, gd_white_key(n)); }
 EXPORT int web_find_black(int n) { return find(C_KEY, gd_black_key(n)); }
 EXPORT int web_find_button(int b) { return find(C_BTN, b); }
+
+/* MIDI vom Geraet: nicht zugeordnete Nachrichten (Clock, Start/Stop, Noten auf anderen Kanaelen) an den Kern */
+static gd_midi midiIn;
+EXPORT int web_find(int kind, int id) { return find(kind, id); }
+EXPORT void web_midi_byte(int b) { gd_midi_byte(&midiIn, &app, (uint8_t)b); }
