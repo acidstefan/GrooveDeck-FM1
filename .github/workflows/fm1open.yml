@@ -83,32 +83,46 @@ jobs:
           powershell -NoProfile -ExecutionPolicy Bypass -File sdk\Build.ps1 -FirmwareOnly -Toolchain $env:FM1_PI32_TOOLCHAIN 2>&1 | Tee-Object -FilePath build-log.txt
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Installationsseite (M-VAVE-Web-Updater mit GrooveDeck)
+      - name: Installationsseiten (M-VAVE-Web-Updater mit eingebetteter Firmware)
         shell: pwsh
         run: |
-          # Der Simulator der Seite wird aus einem unveraenderten FM1 Open gebaut; die Firmware darin ist GrooveDeck.
-          # Ohne Rueckweg-Abbild (Original V15): der haengt auf Geraeten mit neuem Flash-Chip.
+          # installer.html: GrooveDeck. installer-test.html: unveraendertes FM1 Open aus derselben Bauumgebung
+          # (nur eine Markierungsdatei, damit die Kennung abweicht) - Kontrolltest fuer die Bau-/Verpackungskette.
+          # Der Simulator der Seiten wird aus unveraendertem FM1 Open gebaut. Ohne Rueckweg-Abbild Original V15.
           git clone https://github.com/m-vave/fm1_open.git fm1_stock
           git -C fm1_stock checkout $env:FM1_OPEN_COMMIT
-          $b = "fm1_open\build\dx7"
-          $fw = [IO.File]::ReadAllBytes("$pwd\$b\generated\FM1_OFFICIAL_OPEN.fwsc")
-          $id = Get-Content "$b\build-identity.json" -Raw | ConvertFrom-Json
-          $ver = [IO.File]::ReadAllText("$pwd\fm1_open\app\version.h")
-          $product = [regex]::Match($ver, '(?m)^#define FM1_UPDATE_PRODUCT "(FM-1_8[0-9]{6})"').Groups[1].Value
-          $sha = (Get-FileHash "$b\generated\FM1_OFFICIAL_OPEN.fwsc" -Algorithm SHA256).Hash.ToLower()
-          $loader = (Get-FileHash "fm1_open\sdk\tools\pack\ota.bin" -Algorithm SHA256).Hash.ToLower()
-          $pkg = [ordered]@{schema=1; product=$product; profile=$id.profile; family=7; release_version=$id.release_version;
-            build_id=$id.build_id; sha256=$sha; bytes=$fw.Length; loader_sha256=$loader; hardware_validated=$false;
-            data=[Convert]::ToBase64String($fw)} | ConvertTo-Json -Depth 4 -Compress
-          $src = "https://github.com/acidstefan/GrooveDeck-FM1/archive/$env:GITHUB_SHA.zip"
-          cd fm1_stock
-          # im selben Prozess: die Firmware als Text ist fuer eine Kommandozeile zu lang
-          & .\tools\Build-Web.ps1 -PackageJson $pkg -SourceUrl $src | Out-Host
-          $html = [IO.File]::ReadAllText("$pwd\build\official-web\FM1-Official-Open-Source.html")
-          $html = $html.Replace('<title>FM1 工作台</title>', '<title>GrooveDeck FM-1 – Installation</title>')
-          New-Item -ItemType Directory -Force ..\installer | Out-Null
-          [IO.File]::WriteAllText("$pwd\..\installer\installer.html", $html, (New-Object Text.UTF8Encoding $false))
-          Write-Host ("Installationsseite: {0:N0} Byte, Firmware {1}, build_id {2}" -f $html.Length, $sha, $id.build_id)
+          git clone https://github.com/m-vave/fm1_open.git fm1_ctrl
+          git -C fm1_ctrl checkout $env:FM1_OPEN_COMMIT
+          Set-Content fm1_ctrl\app\ci_marker.h "/* GrooveDeck-CI Kontrollbau $env:GITHUB_SHA */"
+          Push-Location fm1_ctrl
+          powershell -NoProfile -ExecutionPolicy Bypass -File sdk\Build.ps1 -FirmwareOnly -Toolchain $env:FM1_PI32_TOOLCHAIN 2>&1 | Select-Object -Last 3
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Pop-Location
+          New-Item -ItemType Directory -Force installer | Out-Null
+          function Make-Installer([string]$tree, [string]$name, [string]$title) {
+            $b = "$pwd\$tree\build\dx7"
+            $fwFile = "$b\generated\FM1_OFFICIAL_OPEN.fwsc"
+            $fw = [IO.File]::ReadAllBytes($fwFile)
+            $id = Get-Content "$b\build-identity.json" -Raw | ConvertFrom-Json
+            $ver = [IO.File]::ReadAllText("$pwd\$tree\app\version.h")
+            $product = [regex]::Match($ver, '(?m)^#define FM1_UPDATE_PRODUCT "(FM-1_8[0-9]{6})"').Groups[1].Value
+            $sha = (Get-FileHash $fwFile -Algorithm SHA256).Hash.ToLower()
+            $loader = (Get-FileHash "$pwd\$tree\sdk\tools\pack\ota.bin" -Algorithm SHA256).Hash.ToLower()
+            $pkg = [ordered]@{schema=1; product=$product; profile=$id.profile; family=7; release_version=$id.release_version;
+              build_id=$id.build_id; sha256=$sha; bytes=$fw.Length; loader_sha256=$loader; hardware_validated=$false;
+              data=[Convert]::ToBase64String($fw)} | ConvertTo-Json -Depth 4 -Compress
+            $src = "https://github.com/acidstefan/GrooveDeck-FM1/archive/$env:GITHUB_SHA.zip"
+            Push-Location fm1_stock
+            # im selben Prozess: die Firmware als Text ist fuer eine Kommandozeile zu lang
+            & .\tools\Build-Web.ps1 -PackageJson $pkg -SourceUrl $src | Out-Host
+            $html = [IO.File]::ReadAllText("$pwd\build\official-web\FM1-Official-Open-Source.html")
+            Pop-Location
+            $html = $html.Replace('<title>FM1 工作台</title>', "<title>$title</title>")
+            [IO.File]::WriteAllText("$pwd\installer\$name", $html, (New-Object Text.UTF8Encoding $false))
+            Write-Host ("{0}: {1:N0} Byte, Firmware {2:N0} Byte sha {3}, build_id {4}, product {5}" -f $name, $html.Length, $fw.Length, $sha, $id.build_id, $product)
+          }
+          Make-Installer 'fm1_open' 'installer.html' 'GrooveDeck FM-1 – Installation'
+          Make-Installer 'fm1_ctrl' 'installer-test.html' 'Kontrolltest: FM1 Open aus der GrooveDeck-Bauumgebung'
 
       - name: Groessenbericht
         if: always()
@@ -133,7 +147,7 @@ jobs:
             fm1_open/build/dx7/generated/FM1_OFFICIAL_OPEN.fwsc
             fm1_open/build/dx7/firmware-report.json
             fm1_open/build/dx7/sdk.map
-            installer/installer.html
+            installer/*.html
 
   pages:
     needs: build
@@ -154,7 +168,7 @@ jobs:
           name: groovedeck-fm1open
           path: art
       - name: Installationsseite dazu
-        run: cp "$(find art -name installer.html | head -1)" site/installer.html && cp fm1open/uploader/index.html site/presets.html && ls -l site
+        run: cp "$(find art -name installer.html | head -1)" site/installer.html && cp "$(find art -name installer-test.html | head -1)" site/installer-test.html && cp fm1open/uploader/index.html site/presets.html && ls -l site
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site
