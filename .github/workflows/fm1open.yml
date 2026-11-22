@@ -188,7 +188,7 @@ jobs:
           name: groovedeck-fm1open
           path: art
       - name: Installationsseite dazu
-        run: cp "$(find art -name installer.html | head -1)" site/installer.html && cp "$(find art -name installer-test.html | head -1)" site/installer-test.html && cp fm1open/uploader/index.html site/presets.html && ls -l site
+        run: cp "$(find art -name installer-test.html | head -1)" site/installer-test.html && cp fm1open/uploader/index.html site/presets.html && ls -l site
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site
