@@ -102,8 +102,8 @@ jobs:
             data=[Convert]::ToBase64String($fw)} | ConvertTo-Json -Depth 4 -Compress
           $src = "https://github.com/acidstefan/GrooveDeck-FM1/archive/$env:GITHUB_SHA.zip"
           cd fm1_stock
-          powershell -NoProfile -ExecutionPolicy Bypass -File tools\Build-Web.ps1 -PackageJson $pkg -SourceUrl $src
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # im selben Prozess: die Firmware als Text ist fuer eine Kommandozeile zu lang
+          & .\tools\Build-Web.ps1 -PackageJson $pkg -SourceUrl $src | Out-Host
           $html = [IO.File]::ReadAllText("$pwd\build\official-web\FM1-Official-Open-Source.html")
           $html = $html.Replace('<title>FM1 工作台</title>', '<title>GrooveDeck FM-1 – Installation</title>')
           New-Item -ItemType Directory -Force ..\installer | Out-Null
