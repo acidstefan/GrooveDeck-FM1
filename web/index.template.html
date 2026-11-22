@@ -178,13 +178,14 @@ const saveMaps = () => { try { localStorage.setItem("gdMidiMaps", JSON.stringify
 const ccName = (ch, cc) => `K${ch + 1} CC${cc}`;
 
 function midiPorts() {
-  const sel = document.getElementById("min"), keep = sel.value;
+  const sel = document.getElementById("min"), keep = sel.value || "all";
   const list = [...midi.inputs.values()];
-  sel.innerHTML = list.map(p => `<option value="${p.id}">${p.name.replace(/[<>&]/g, "")}</option>`).join("");
-  const guess = list.find(p => /fm-?1|m-?vave/i.test(p.name));
-  if (list.some(p => p.id === keep)) sel.value = keep; else if (guess) sel.value = guess.id;
-  list.forEach(p => { p.onmidimessage = p.id === sel.value ? onMidi : null; });
-  mstat(list.length ? `Verbunden mit ${sel.selectedOptions[0]?.text || "?"} – am FM-1 drehen oder spielen; was ankommt, steht rechts.` : "Kein MIDI-Eingang gefunden – FM-1 per USB anschließen.");
+  const esc = t => String(t).replace(/[<>&"]/g, "");
+  sel.innerHTML = `<option value="all">Alle Eingänge (${list.length})</option>` + list.map(p => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join("");
+  sel.value = keep === "all" || list.some(p => p.id === keep) ? keep : "all";
+  list.forEach(p => { p.onmidimessage = sel.value === "all" || p.id === sel.value ? onMidi : null; });
+  mstat(list.length ? `Gefundene MIDI-Eingänge: ${list.map(p => p.name).join(", ")} – am FM-1 drehen oder spielen; was ankommt, steht rechts.`
+                    : "Der Browser findet keinen MIDI-Eingang – FM-1 per USB anschließen, Seite neu laden.");
   document.getElementById("mlog").hidden = false;
   if (!mlogLines.length) document.getElementById("mlog").textContent = "MIDI: noch nichts empfangen";
 }

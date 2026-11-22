@@ -147,6 +147,16 @@ void groove_screen_init(void)
     audio_pump();
 }
 
+/* Bedienteil-Spiegel: jede Eingabe zusaetzlich per USB-MIDI auf Kanal 16 (fuer das Browser-Bedienfeld, web/):
+   Note 0-26 = Taste, Note 32+n = Button n (GB_*), CC 1+n = Drehregler n relativ (1..63 / 65..127), CC 8 = MASTER */
+static void mirror(uint8_t status, unsigned d1, unsigned d2)
+{
+    uint8_t m[3];
+    if (!(fm1_midi_ready_ports() & (1u << FM1_MIDI_USB))) return;
+    m[0] = status; m[1] = (uint8_t)(d1 & 0x7Fu); m[2] = (uint8_t)(d2 & 0x7Fu);
+    (void)fm1_midi_send_port(FM1_MIDI_USB, m, sizeof m);
+}
+
 void groove_screen_control(void)
 {
     struct fm1_controls in;
@@ -158,19 +168,32 @@ void groove_screen_control(void)
 
     diff = in.buttons ^ prev_buttons;
     for (i = 0; i < 14; ++i)
-        if ((diff >> i) & 1u) gd_app_post_button(&gd_state, btn_map[i], (int)((in.buttons >> i) & 1u));
+        if ((diff >> i) & 1u) {
+            const unsigned down = (in.buttons >> i) & 1u;
+            gd_app_post_button(&gd_state, btn_map[i], (int)down);
+            mirror(down ? 0x9F : 0x8F, 32u + (unsigned)btn_map[i], down ? 127u : 0u);
+        }
     prev_buttons = in.buttons;
     diff = in.keys ^ prev_keys;
     for (i = 0; i < GD_KEYS; ++i)
-        if ((diff >> i) & 1u) gd_app_post_key(&gd_state, (int)i, (int)((in.keys >> i) & 1u));
+        if ((diff >> i) & 1u) {
+            const unsigned down = (in.keys >> i) & 1u;
+            gd_app_post_key(&gd_state, (int)i, (int)down);
+            mirror(down ? 0x9F : 0x8F, i, down ? 100u : 0u);
+        }
     prev_keys = in.keys;
     for (i = 0; i < 7; ++i)
-        if (in.encoders[i]) gd_app_post_encoder(&gd_state, enc_map[i], in.encoders[i]);
+        if (in.encoders[i]) {
+            const int d = in.encoders[i] > 63 ? 63 : in.encoders[i] < -63 ? -63 : in.encoders[i];
+            gd_app_post_encoder(&gd_state, enc_map[i], in.encoders[i]);
+            mirror(0xBF, 1u + (unsigned)enc_map[i], (unsigned)(d & 0x7F));
+        }
 
     /* MASTER: Rauschen unter 4/1023 ignorieren */
     if ((int)in.knob - knob_sent > 3 || knob_sent - (int)in.knob > 3) {
         knob_sent = in.knob;
         gd_app_post_master(&gd_state, (float)in.knob / 1023.0f);
+        mirror(0xBF, 8u, (unsigned)in.knob >> 3);
     }
 
     /* Akku alle 2 s: PB1 ueber Spannungsteiler. Annahme (noch am Geraet zu pruefen): Teiler 1:2, Referenz 3,3 V;
