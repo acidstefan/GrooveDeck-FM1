@@ -3,3 +3,5 @@ build/
 *.wav
 *.ppm
 __pycache__/
+web/gd_web.wasm
+web/groovedeck-fm1.html

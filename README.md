@@ -38,6 +38,7 @@ ctest --test-dir build -C Release
   - Maus: Tasten/Buttons anklicken (halten = gedrückt halten), Regler mit Mausrad oder durch Ziehen nach oben/unten
   - Tastatur: weiße Tasten `Z X C V B N M , . / Q W E R T Y` (deutsche Tastatur: `Y` statt `Z`, `Z` statt `Y`), schwarze darüber `S D F H J L Ö Ä 3 4 6`; F1 FX, F2 SEL, F3 ENV, F4 LFO, F5 EDIT, F6 GLO, F7 HOME, F8 SAVE, F9 ARP, F10 SEQ, F11/Leertaste PLAY, F12 REC, `Ü`/`+` OCT−/OCT+, Pfeil hoch/runter SELECT, Pfeil links/rechts PRESETS
   - Zoom: Strg + Mausrad, Strg + Plus/Minus, Strg + 0; das Fenster lässt sich frei ziehen
+- **Im Browser:** dasselbe Bedienfeld als WebAssembly, ohne Installation: https://acidstefan.github.io/GrooveDeck-FM1/ (baut GitHub Actions bei jedem Push; selbst bauen: `sh web/build.sh`, braucht clang und lld, ergibt `web/groovedeck-fm1.html`)
 - `gd_render 0 8 preset.wav`: Preset 1 als 8-Sekunden-WAV rendern (zum Anhören)
 - `gd_render --list`: alle Presets anzeigen
 - `gd_render --all`: alle Presets prüfen (Pegel, NaN, Rechenzeit)
