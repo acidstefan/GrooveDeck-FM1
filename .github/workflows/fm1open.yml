@@ -1,6 +1,6 @@
 # Baut die FM1-Open-Fassung von GrooveDeck auf einem Windows-Rechner von GitHub (kein lokaler Windows-Bau noetig),
 # dazu eine Installationsseite (M-VAVEs Web-Updater mit eingebetteter GrooveDeck-Firmware) und das Browser-
-# Bedienfeld, und stellt beides auf GitHub Pages: /  (Bedienfeld) und /installer.html.
+# Bedienfeld, und stellt alles auf GitHub Pages: /  (Bedienfeld), /installer.html, /presets.html (Preset-Paket).
 # Ergebnis ausserdem als Download ("Artifacts") am Lauf.
 name: FM1 Open Firmware
 
@@ -154,7 +154,7 @@ jobs:
           name: groovedeck-fm1open
           path: art
       - name: Installationsseite dazu
-        run: cp "$(find art -name installer.html | head -1)" site/installer.html && ls -l site
+        run: cp "$(find art -name installer.html | head -1)" site/installer.html && cp fm1open/uploader/index.html site/presets.html && ls -l site
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site
