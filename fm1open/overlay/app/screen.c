@@ -34,8 +34,11 @@ static volatile unsigned ring_w, ring_r;
 volatile uint32_t gd_underruns;
 static float au_l[FM1_BLOCK_FRAMES], au_r[FM1_BLOCK_FRAMES];
 
-FM1_AUDIO_CODE int gd_render_block(int32_t *out)
+/* Laeuft im Audio-Interrupt, auch waehrend Flash-Zugriffen: nur SRAM-Code und RAM-Daten. Ueber volatile kopieren,
+   sonst macht der Compiler aus den Schleifen memset/memcpy-Aufrufe - die liegen im Flash (Absturz beim Start). */
+FM1_AUDIO_CODE int gd_render_block(int32_t *out_)
 {
+    volatile int32_t *out = out_;
     unsigned i;
     if (ring_r == ring_w) {
         for (i = 0; i < FM1_BLOCK_WORDS; ++i) out[i] = 0;
@@ -43,7 +46,7 @@ FM1_AUDIO_CODE int gd_render_block(int32_t *out)
         return 0;
     }
     {
-        const int32_t *src = ring[ring_r % GD_RING];
+        const volatile int32_t *src = ring[ring_r % GD_RING];
         for (i = 0; i < FM1_BLOCK_WORDS; ++i) out[i] = src[i];
     }
     ring_r = ring_r + 1u;
