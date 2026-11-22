@@ -134,7 +134,13 @@ jobs:
           $objdump = Join-Path $env:FM1_PI32_TOOLCHAIN 'bin\llvm-objdump.exe'
           if (Test-Path $objdump) { & $objdump -h $elf | Out-String -Width 300 | Write-Host }
           Write-Host "=== Audio-Interrupt-Pfad (darf nur SRAM-Code aufrufen) ==="
-          & $objdump -d --disassemble-symbols=gd_render_block,fm1_audio_irq,fm1_output_mix $elf 2>&1 | Select-Object -First 400 | Out-String -Width 300 | Write-Host
+          & $objdump -d $elf 2>$null | Set-Content disasm.txt
+          $want = @('gd_render_block','fm1_audio_irq','fm1_output_mix','fm1_audio_copy')
+          $show = $false
+          foreach ($l in [IO.File]::ReadLines("$pwd\disasm.txt")) {
+            if ($l -match '^[0-9a-f]+ <([^>]+)>:') { $show = $want -contains $Matches[1] }
+            if ($show) { Write-Host $l }
+          }
           Write-Host "=== groesste Symbole ==="
           & $nm --print-size --size-sort --radix=d $elf | Select-Object -Last 70 | Out-String -Width 300 | Write-Host
 
