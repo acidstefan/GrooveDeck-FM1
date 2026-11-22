@@ -135,15 +135,24 @@ jobs:
           if (Test-Path $objdump) { & $objdump -h $elf | Out-String -Width 300 | Write-Host }
           Write-Host "=== Audio-Interrupt-Pfad (darf nur SRAM-Code aufrufen) ==="
           & $objdump -d $elf 2>&1 | Set-Content disasm.txt
-          Write-Host ("disasm: {0} Zeilen" -f (Get-Content disasm.txt).Count)
-          Get-Content disasm.txt -TotalCount 15 | Write-Host
-          Select-String -Path disasm.txt -Pattern 'gd_render_block|fm1_audio_irq' | Select-Object -First 10 | ForEach-Object { Write-Host $_.Line }
+          # Funktionen im SRAM (Adresse unter 0x2000000) duerfen nichts im Flash aufrufen: der Audio-Interrupt
+          # laeuft auch waehrend Flash-Zugriffen. Ausgabe aller solcher Aufrufe; die Interrupt-Funktionen ganz.
           $want = @('gd_render_block','fm1_audio_irq','fm1_output_mix','fm1_audio_copy')
-          $show = $false
+          $fn = ''; $fnAddr = -1; $show = $false; $bad = @()
           foreach ($l in [IO.File]::ReadLines("$pwd\disasm.txt")) {
-            if ($l -match '^[0-9a-f]+ <([^>]+)>:') { $show = $want -contains $Matches[1] }
-            if ($show) { Write-Host $l }
+            if ($l -match '^([A-Za-z_.$][\w.$]*):\s*$') { $fn = $Matches[1]; $fnAddr = -1; $show = $want -contains $fn; if ($show) { Write-Host "$fn:" }; continue }
+            if ($l -match '^\s*([0-9a-f]+):') {
+              $addr = [Convert]::ToInt64($Matches[1], 16)
+              if ($fnAddr -lt 0) { $fnAddr = $addr }
+              if ($show) { Write-Host $l }
+              if ($fnAddr -lt 0x2000000 -and $l -match '\bcall\b.*<([^ ]+) : ([0-9a-f]+) >') {
+                if ([Convert]::ToInt64($Matches[2], 16) -ge 0x2000000) { $bad += "$fn ruft $($Matches[1]) (Flash)" }
+              }
+            }
           }
+          Write-Host "=== SRAM-Code ruft Flash-Code ==="
+          $bad | Sort-Object -Unique | Select-Object -First 80 | ForEach-Object { Write-Host $_ }
+          Write-Host ("{0} Faelle" -f ($bad | Sort-Object -Unique).Count)
           Write-Host "=== groesste Symbole ==="
           & $nm --print-size --size-sort --radix=d $elf | Select-Object -Last 70 | Out-String -Width 300 | Write-Host
 
