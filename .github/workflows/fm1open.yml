@@ -140,7 +140,7 @@ jobs:
           $want = @('gd_render_block','fm1_audio_irq','fm1_output_mix','fm1_audio_copy')
           $fn = ''; $fnAddr = -1; $show = $false; $bad = @()
           foreach ($l in [IO.File]::ReadLines("$pwd\disasm.txt")) {
-            if ($l -match '^([A-Za-z_.$][\w.$]*):\s*$') { $fn = $Matches[1]; $fnAddr = -1; $show = $want -contains $fn; if ($show) { Write-Host "$fn:" }; continue }
+            if ($l -match '^([A-Za-z_.$][\w.$]*):\s*$') { $fn = $Matches[1]; $fnAddr = -1; $show = $want -contains $fn; if ($show) { Write-Host "${fn}:" }; continue }
             if ($l -match '^\s*([0-9a-f]+):') {
               $addr = [Convert]::ToInt64($Matches[1], 16)
               if ($fnAddr -lt 0) { $fnAddr = $addr }
